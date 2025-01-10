@@ -14,6 +14,8 @@ endif()
 # Find Google Benchmark installed via Homebrew
 find_package(benchmark REQUIRED)
 
+find_package(Eigen3 3.3 REQUIRED NO_MODULE)
+
 # Include FetchContent module
 include(FetchContent)
 
@@ -40,6 +42,7 @@ target_link_libraries(fast_mi
     benchmark::benchmark
     absl::flat_hash_map # Replace with needed Abseil components
     Threads::Threads
+    Eigen3::Eigen
 )
 
 # Set optimization flags for performance

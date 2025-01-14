@@ -3,7 +3,6 @@
 #include <vector>
 #include <cmath>
 #include <numeric>
-#include <benchmark/benchmark.h>
 
 #include <iostream>
 #include <vector>
@@ -13,38 +12,6 @@
 #include <functional>
 
 #include "absl/container/flat_hash_map.h"
-
-// Use a better implementation
-class NegativeBinomial {
-public:
-    NegativeBinomial(double r, double p) : r_(r), p_(p) {}
-
-    double pmf(int k) const {
-        if (k < 0) return 0.0;
-        // PMF: P(X=k) = C(k+r-1, k) * p^r * (1-p)^k
-        // Using logarithms to prevent overflow for large k
-        double log_pmf = log_combination(k + r_ - 1, k) + r_ * std::log(p_) + k * std::log(1.0 - p_);
-        return std::exp(log_pmf);
-    }
-
-private:
-    double r_;
-    double p_;
-
-    // Computes log(C(n, k)) using log-factorials
-    double log_combination(int n, int k) const {
-        return log_factorial(n) - log_factorial(k) - log_factorial(n - k);
-    }
-
-    double log_factorial(int n) const {
-        if (n <= 1) return 0.0;
-        double log_fact = 0.0;
-        for (int i = 2; i <= n; ++i) {
-            log_fact += std::log(static_cast<double>(i));
-        }
-        return log_fact;
-    }
-};
 
 // Define a Point structure with integer coordinates
 struct Point {

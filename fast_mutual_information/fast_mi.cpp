@@ -1,7 +1,10 @@
 #include <vector>
 #include <cmath>
 #include <numeric>
-#include <benchmark/benchmark.h>
+
+// #ifdef ENABLE_BENCHMARK
+// #include <benchmark/benchmark.h>
+// #endif
 
 #include <iostream>
 #include <vector>
@@ -47,21 +50,20 @@ int main() {
     Eigen::VectorXd mean(2);
     mean << 10.0, 50.0;
 
-    Eigen::VectorXd variances(2);
-    variances << 5.0, 15.0;
+    Eigen::VectorXd variance(2);
+    variance << 5.0, 15.0;
 
     Eigen::MatrixXd corr(2, 2);
     corr <<  1.0,  -0.7,
-             -0.7,  1.0;
+            -0.7,  1.0;
 
-    Eigen::MatrixXd cov = correlationToCovariance(corr, variances);
+    Eigen::MatrixXd cov = correlationToCovariance(corr, variance);
 
     int num_samples = 100000;
 
     Eigen::MatrixXd samples = sampleMultivariateNormal(mean, cov, num_samples);
 
-
-    double mi = mutual_information_normal(mean(0), std::sqrt(variances(0)), mean(1), std::sqrt(variances(1)), samples);
+    double mi = mutual_information_normal(mean(0), std::sqrt(variance(0)), mean(1), std::sqrt(variance(1)), samples);
 
     double analyticalMI = -0.5 * std::log(1 - std::pow(corr(0, 1), 2));
 

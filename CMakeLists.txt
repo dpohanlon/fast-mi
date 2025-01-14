@@ -13,16 +13,13 @@ endif()
 # Option to enable Boost (ON by default)
 option(ENABLE_BOOST "Enable Boost Libraries" ON)
 
-# Find Google Benchmark installed via Homebrew
-if(ENABLE_BENCHMARK)
-    find_package(benchmark REQUIRED)
-endif()
-
 find_package(Python 3.9 COMPONENTS Interpreter Development.Module REQUIRED)
 #find_package(pybind11 CONFIG REQUIRED)
 add_subdirectory(extern/pybind11)
 
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
+
+find_package(FastNB REQUIRED)
 
 # Include FetchContent module
 include(FetchContent)
@@ -75,25 +72,24 @@ target_include_directories(fast_mi_lib PUBLIC
     ${Boost_INCLUDE_DIRS}  # Ensure Boost includes are PUBLIC
 )
 
-# Link Google Benchmark, Abseil, and pthread
 find_package(Threads REQUIRED)
 
 target_link_libraries(fast_mi PUBLIC
-    benchmark::benchmark
     absl::flat_hash_map
     Threads::Threads
     Eigen3::Eigen
     Boost::headers
     Boost::system
+    FastNB::fast_nb_lib
 )
 
 target_link_libraries(fast_mi_lib PUBLIC
-    benchmark::benchmark
     absl::flat_hash_map
     Threads::Threads
     Eigen3::Eigen
     Boost::headers
     Boost::system
+    FastNB::fast_nb_lib
 )
 
 # Create the Python module using Pybind11

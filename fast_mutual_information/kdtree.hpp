@@ -243,6 +243,10 @@ private:
         return compute_total_count(node->left.get()) + compute_total_count(node->right.get());
     }
 
+    // Can I make the underlying storage here an eigen vector, and then just push it through the NB calculation? Or maybe even populate it with points and the corresponding NB beforehand? -> Take the two Eigen vectors, calculate the NB, and then pop the points with (x, y, nb_x, nb_y)
+
+    // Take either a function p_x, p_y, or vectors p_x, p_y
+
     // Function to traverse the tree and compute mutual information
     void traverse_and_compute(const KDNode* node,
                                const std::function<double(int)>& p_x_func,

@@ -7,6 +7,7 @@
 // #endif
 
 #include <iostream>
+#include <fstream>
 #include <vector>
 #include <algorithm>
 #include <memory>
@@ -45,6 +46,33 @@
 //     return 0;
 // }
 
+// int main() {
+
+//     Eigen::VectorXd mean(2);
+//     mean << 10.0, 50.0;
+
+//     Eigen::VectorXd variance(2);
+//     variance << 5.0, 15.0;
+
+//     Eigen::MatrixXd corr(2, 2);
+//     corr <<  1.0,  -0.7,
+//             -0.7,  1.0;
+
+//     Eigen::MatrixXd cov = correlationToCovariance(corr, variance);
+
+//     int num_samples = 100000;
+
+//     Eigen::MatrixXd samples = sampleMultivariateNormal(mean, cov, num_samples);
+
+//     double mi = mutual_information_normal(mean(0), std::sqrt(variance(0)), mean(1), std::sqrt(variance(1)), samples);
+
+//     double analyticalMI = -0.5 * std::log(1 - std::pow(corr(0, 1), 2));
+
+//     std::cout << analyticalMI <<  " " << mi << std::endl;
+
+//     return 0;
+// }
+
 int main() {
 
     Eigen::VectorXd mean(2);
@@ -57,19 +85,48 @@ int main() {
     corr <<  1.0,  -0.7,
             -0.7,  1.0;
 
-    Eigen::MatrixXd cov = correlationToCovariance(corr, variance);
+    const double step = 0.01;
 
-    int num_samples = 100000;
+    std::vector<double> rho_vec;
+    std::vector<double> mi_analytical_vec;
+    std::vector<double> mi_tree_vec;
 
-    Eigen::MatrixXd samples = sampleMultivariateNormal(mean, cov, num_samples);
+    for (double rho = -0.99; rho <= 1.0; rho += step) {
 
-    double mi = mutual_information_normal(mean(0), std::sqrt(variance(0)), mean(1), std::sqrt(variance(1)), samples);
+        rho_vec.push_back(rho);
 
-    double analyticalMI = -0.5 * std::log(1 - std::pow(corr(0, 1), 2));
+        corr(0, 1) = rho;
+        corr(1, 0) = rho;
 
-    std::cout << analyticalMI <<  " " << mi << std::endl;
+        Eigen::MatrixXd cov = correlationToCovariance(corr, variance);
 
-    return 0;
+        int num_samples = 1000;
+
+        Eigen::MatrixXd samples = sampleMultivariateNormal(mean, cov, num_samples);
+
+        double mi = mutual_information_normal(mean(0), std::sqrt(variance(0)), mean(1), std::sqrt(variance(1)), samples);
+
+        double analyticalMI = -0.5 * std::log(1 - std::pow(corr(0, 1), 2));
+
+        mi_analytical_vec.push_back(analyticalMI);
+        mi_tree_vec.push_back(mi);
+
+    }
+
+    std::string csv_filename = "mi_1k.csv";
+
+    std::ofstream file(csv_filename);
+
+    file << "rho,mi,mi_tree\n";
+
+    file << std::fixed << std::setprecision(6);
+
+    for (int i = 0; i < rho_vec.size(); i++) {
+        file << rho_vec[i] << "," << mi_analytical_vec[i] << "," << mi_tree_vec[i] << "\n";
+    }
+
+    file.close();
+
 }
 
 // static void BM_MI(benchmark::State& state) {

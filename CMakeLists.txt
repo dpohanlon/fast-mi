@@ -118,3 +118,13 @@ endif()
 
 install(TARGETS fast_mutual_information
         LIBRARY DESTINATION fast_mutual_information)
+
+# Install the executable
+install(TARGETS fast_mi
+    RUNTIME DESTINATION bin
+)
+
+# Install the Python module
+install(TARGETS fast_mutual_information
+    LIBRARY DESTINATION lib/python_modules
+)

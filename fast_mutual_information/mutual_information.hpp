@@ -1,5 +1,7 @@
 #pragma once
 
+#include<functional>
+
 #include <Eigen/Dense>
 #include "fast_negative_binomial/fast_nb.hpp"
 
@@ -9,6 +11,42 @@
 
 // Set up with a class, configure, then run MI calculation
 // TODO: Take Eigen vectors of means and variances
+
+typedef std::function<double(int)> pmf_f;
+typedef std::function<double(int)> cdf_f;
+typedef std::function<int(double)> icdf_f;
+
+class Copula {
+
+public:
+    Copula(pmf_f &p_x, pmf_f p_y, cdf_f &cdf_x, cdf_f &cdf_y, icdf_f &icdf_x, icdf_f &icdf_y) : p_x(p_x), p_y(p_y), cdf_x(cdf_x), cdf_y(cdf_y), icdf_x(icdf_x), icdf_y(icdf_y) {}
+
+    // PDFs
+    pmf_f p_x;
+    pmf_f p_y;
+
+    // CDFs
+    cdf_f cdf_x;
+    cdf_f cdf_y;
+
+    // Inverse CDFs
+    icdf_f icdf_x;
+    icdf_f icdf_y;
+
+};
+
+class MutualInformation {
+public:
+    MutualInformation(Copula & copula, std::vector<Point> & data, int min_pop = 10) : copula(copula) {
+
+        // KDTree tree(data, copula, min_pop); // Update me
+    }
+
+private:
+    // KDTree tree;
+    Copula copula;
+
+};
 
 // Mutual information with normally distributed marginals
 double mutual_information_normal(double mean1, double std_dev1, double mean2, double std_dev2, std::vector<Point> & data, int min_pop = 10)

@@ -20,59 +20,6 @@
 #include "utils.hpp"
 #include "mutual_information.hpp"
 
-// int main() {
-//     // Example data generation (replace with your actual data)
-//     std::vector<Point> data = generate_correlated_data();
-
-//     // Initialize kd-tree with max 2 points per leaf
-//     KDTree tree(data, 10);
-
-//     // Define Negative Binomial PMFs for X and Y
-//     NegativeBinomial nb_x(5.0, 0.5);
-//     NegativeBinomial nb_y(5.0, 0.5);
-
-//     // Lambda functions to wrap the PMFs
-//     auto p_x_func = [&](int x) -> double {
-//         return nb_x.pmf(x);
-//     };
-//     auto p_y_func = [&](int y) -> double {
-//         return nb_y.pmf(y);
-//     };
-
-//     // Compute mutual information
-//     double mi = tree.compute_mutual_information(p_x_func, p_y_func);
-
-//     std::cout << "Mutual Information: " << mi << " bits\n";
-//     return 0;
-// }
-
-// int main() {
-
-//     Eigen::VectorXd mean(2);
-//     mean << 10.0, 50.0;
-
-//     Eigen::VectorXd variance(2);
-//     variance << 5.0, 15.0;
-
-//     Eigen::MatrixXd corr(2, 2);
-//     corr <<  1.0,  -0.7,
-//             -0.7,  1.0;
-
-//     Eigen::MatrixXd cov = correlationToCovariance(corr, variance);
-
-//     int num_samples = 100000;
-
-//     Eigen::MatrixXd samples = sampleMultivariateNormal(mean, cov, num_samples);
-
-//     double mi = mutual_information_normal(mean(0), std::sqrt(variance(0)), mean(1), std::sqrt(variance(1)), samples);
-
-//     double analyticalMI = -0.5 * std::log(1 - std::pow(corr(0, 1), 2));
-
-//     std::cout << analyticalMI <<  " " << mi << std::endl;
-
-//     return 0;
-// }
-
 int main() {
 
     Eigen::VectorXd mean(2);

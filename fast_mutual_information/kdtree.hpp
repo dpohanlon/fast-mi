@@ -13,6 +13,8 @@
 
 #include "absl/container/flat_hash_map.h"
 
+#include "copula.hpp"
+
 // Define a Point structure with integer coordinates
 struct Point {
     int x;

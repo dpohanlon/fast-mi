@@ -55,8 +55,11 @@ struct KDNode {
 // kd-tree class
 class KDTree {
 public:
-    KDTree(const std::vector<Point>& points, int max_points_per_leaf = 10)
-        : max_points(max_points_per_leaf) {
+
+    KDTree() {}
+
+    KDTree(const std::vector<Point>& points, Copula copula, int max_points_per_leaf = 10)
+        : max_points(max_points_per_leaf), copula(copula) {
         // Preprocess points to count duplicates
         std::vector<std::pair<Point, int>> unique_points = count_duplicates_unordered_map(points);
         root = build(unique_points, 0);
@@ -64,6 +67,12 @@ public:
     }
 
     // Function to compute mutual information
+    double compute_mutual_information() const {
+        double mi = 0.0;
+        traverse_and_compute(root.get(), mi);
+        return mi;
+    }
+
     double compute_mutual_information(const std::function<double(int)>& p_x_func,
                                      const std::function<double(int)>& p_y_func) const {
         double mi = 0.0;
@@ -75,6 +84,8 @@ private:
     std::unique_ptr<KDNode> root;
     int max_points; // Maximum points per leaf
     long long total_count; // Total number of points
+
+    Copula copula;
 
     // Function to count duplicates and return unique points with their counts
     std::vector<std::pair<Point, int>> count_duplicates(const std::vector<Point>& points) {
@@ -273,4 +284,27 @@ private:
         traverse_and_compute(node->left.get(), p_x_func, p_y_func, mi);
         traverse_and_compute(node->right.get(), p_x_func, p_y_func, mi);
     }
+
+    void traverse_and_compute(const KDNode* node,
+                               double& mi) const {
+        if (!node) return;
+
+        if (node->is_leaf) {
+            for (const auto& p : node->points) {
+                double p_xy = static_cast<double>(p.second) / static_cast<double>(total_count);
+                double p_x = this->copula.p_x(p.first.x);
+                double p_y = this->copula.p_y(p.first.y);
+
+                if (p_xy > 0 && p_x > 0 && p_y > 0) {
+                    mi += p_xy * std::log(p_xy / (p_x * p_y));
+                }
+            }
+            return;
+        }
+
+        // Recurse on left and right children
+        traverse_and_compute(node->left.get(), mi);
+        traverse_and_compute(node->right.get(), mi);
+    }
+
 };

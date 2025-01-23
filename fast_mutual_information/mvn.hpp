@@ -1,10 +1,14 @@
 #pragma once
 
-#include <Eigen/Dense>
 #include <random>
 #include <chrono>
 #include <iostream>
+#include <cmath>
+#include <stdexcept>
+#include <limits>
 
+#include <boost/math/distributions/normal.hpp>
+#include <Eigen/Dense>
 
 /**
  * @brief Converts a correlation matrix and a vector of variances to a covariance matrix.
@@ -56,10 +60,31 @@ double normal_pdf(double x, double mean, double stddev) {
         throw std::invalid_argument("Standard deviation must be positive.");
     }
 
-    static const double inv_sqrt_2pi = 0.3989422804014327; // 1 / sqrt(2π)
+    boost::math::normal dist(mean, stddev);
+    return boost::math::pdf(dist, x);
+}
 
-    double z = (x - mean) / stddev;
-    return (inv_sqrt_2pi / stddev) * std::exp(-0.5 * z * z);
+// Cumulative Distribution Function (CDF) of the normal distribution
+double normal_cdf(double x, double mean, double stddev) {
+    if (stddev <= 0.0) {
+        throw std::invalid_argument("Standard deviation must be positive.");
+    }
+
+    boost::math::normal dist(mean, stddev);
+    return boost::math::cdf(dist, x);
+}
+
+// Inverse Cumulative Distribution Function (Inverse CDF) or Quantile Function of the normal distribution
+double normal_icdf(double p, double mean, double stddev) {
+    if (stddev <= 0.0) {
+        throw std::invalid_argument("Standard deviation must be positive.");
+    }
+    if (p < 0.0 || p > 1.0) {
+        throw std::invalid_argument("Probability p must be between 0 and 1.");
+    }
+
+    boost::math::normal dist(mean, stddev);
+    return boost::math::quantile(dist, p);
 }
 
 /**

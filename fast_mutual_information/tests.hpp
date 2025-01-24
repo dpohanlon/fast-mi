@@ -64,8 +64,8 @@ std::vector<Point> generate_correlated_data(int num_points = 1000){
         double z_shared_y = gamma_shared_y(rng);
 
         // Generate X and Y from Poisson distributions with rate parameters derived from Gamma variables
-        int x = generate_poisson(z_shared_x, rng);
-        int y = generate_poisson(z_shared_y, rng);
+        double x = generate_poisson(z_shared_x, rng);
+        double y = generate_poisson(z_shared_y, rng);
 
         // Store the generated point
         dataset.push_back(Point{ x, y });

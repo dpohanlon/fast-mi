@@ -28,31 +28,34 @@ std::vector<Point> convertSamplesToPoints(
     for (int i = 0; i < num_samples; ++i) {
         double x_double = samples(0, i);
         double y_double = samples(1, i);
-        int x_int, y_int;
+        // int x_int, y_int;
 
-        // Convert double to int based on the rounding mode
-        if (rounding_mode == "round") {
-            x_int = static_cast<int>(std::round(x_double));
-            y_int = static_cast<int>(std::round(y_double));
-        }
-        else if (rounding_mode == "floor") {
-            x_int = static_cast<int>(std::floor(x_double));
-            y_int = static_cast<int>(std::floor(y_double));
-        }
-        else if (rounding_mode == "ceil") {
-            x_int = static_cast<int>(std::ceil(x_double));
-            y_int = static_cast<int>(std::ceil(y_double));
-        }
-        else if (rounding_mode == "truncate") {
-            x_int = static_cast<int>(x_double); // Truncates towards zero
-            y_int = static_cast<int>(y_double);
-        }
-        else {
-            throw std::invalid_argument("Invalid rounding_mode. Choose from 'round', 'floor', 'ceil', or 'truncate'.");
-        }
+        // // Convert double to int based on the rounding mode
+        // if (rounding_mode == "round") {
+        //     x_int = static_cast<int>(std::round(x_double));
+        //     y_int = static_cast<int>(std::round(y_double));
+        // }
+        // else if (rounding_mode == "floor") {
+        //     x_int = static_cast<int>(std::floor(x_double));
+        //     y_int = static_cast<int>(std::floor(y_double));
+        // }
+        // else if (rounding_mode == "ceil") {
+        //     x_int = static_cast<int>(std::ceil(x_double));
+        //     y_int = static_cast<int>(std::ceil(y_double));
+        // }
+        // else if (rounding_mode == "truncate") {
+        //     x_int = static_cast<int>(x_double); // Truncates towards zero
+        //     y_int = static_cast<int>(y_double);
+        // }
+        // else {
+        //     throw std::invalid_argument("Invalid rounding_mode. Choose from 'round', 'floor', 'ceil', or 'truncate'.");
+        // }
+
+        // // Create a Point and add to the vector
+        // points.emplace_back(Point{ x_int, y_int });
 
         // Create a Point and add to the vector
-        points.emplace_back(Point{ x_int, y_int });
+        points.emplace_back(Point{ x_double, y_double });
     }
 
     return points;

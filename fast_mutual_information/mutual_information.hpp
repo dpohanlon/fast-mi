@@ -14,16 +14,40 @@
 
 class MutualInformation {
 public:
-    // Fix how to set this up with copula, tree, etc
+
     MutualInformation() {
+        this->copula = new Copula();
+    }
+
+    // Destructor to prevent memory leaks
+    ~MutualInformation() {
+        delete this->copula;
+    }
+
+    // Fix how to set this up with copula, tree, etc
+    MutualInformation(std::vector<Point> & data, int min_pop = 10) {
+
+        this->copula = new Copula();
+        this->setData(data, min_pop);
 
     }
 
     void setNormalCopula(double mean1, double std_dev1, double mean2, double std_dev2)
     {
+        // std::cout << "Copula " << mean1 << " " << std_dev1 << " "  << mean2 << " "  << std_dev2 << std::endl;
         setNormalPMF(mean1, std_dev1, mean2, std_dev2);
         setNormalCDF(mean1, std_dev1, mean2, std_dev2);
         setNormalICDF(mean1, std_dev1, mean2, std_dev2);
+    }
+
+    void setUniformCopula()
+    {
+        this->copula->p_x = [](double x) -> double { return 1.0; };
+        this->copula->p_y = [](double y) -> double { return 1.0; };
+        this->copula->cdf_x = [](double x) -> double { return x; };
+        this->copula->cdf_y = [](double y) -> double { return y; };
+        this->copula->icdf_x = [](double u) -> double { return u; };
+        this->copula->icdf_y = [](double v) -> double { return v; };
     }
 
     void setData(std::vector<Point> & data, int min_pop = 10)
@@ -33,47 +57,25 @@ public:
 
     void setNormalPMF(double mean1, double std_dev1, double mean2, double std_dev2)
     {
-        auto x_func = [&](int x) -> double {
-            return normal_pdf(x, mean1, std_dev1);
-        };
-        auto y_func = [&](int y) -> double {
-            return normal_pdf(y, mean2, std_dev2);
-        };
-
-        this->copula.p_x = x_func;
-        this->copula.p_y = y_func;
+        this->copula->p_x = [=](double x) -> double { return normal_pdf(x, mean1, std_dev1); };
+        this->copula->p_y = [=](double y) -> double { return normal_pdf(y, mean2, std_dev2); };
     }
 
     void setNormalCDF(double mean1, double std_dev1, double mean2, double std_dev2)
     {
-        auto x_func = [&](int x) -> double {
-            return normal_cdf(x, mean1, std_dev1);
-        };
-        auto y_func = [&](int y) -> double {
-            return normal_cdf(y, mean2, std_dev2);
-        };
-
-        this->copula.cdf_x = x_func;
-        this->copula.cdf_y = y_func;
+        this->copula->cdf_x = [=](double x) -> double { return normal_cdf(x, mean1, std_dev1); };
+        this->copula->cdf_y = [=](double y) -> double { return normal_cdf(y, mean2, std_dev2); };
     }
 
     void setNormalICDF( double mean1, double std_dev1, double mean2, double std_dev2)
     {
-        auto x_func = [&](double x) -> int {
-            return normal_icdf(x, mean1, std_dev1);
-        };
-        auto y_func = [&](double y) -> int {
-            return normal_icdf(y, mean2, std_dev2);
-        };
-
-        this->copula.icdf_x = x_func;
-        this->copula.icdf_y = y_func;
+        this->copula->icdf_x = [=](double x) -> double { return normal_icdf(x, mean1, std_dev1); };
+        this->copula->icdf_y = [=](double y) -> double { return normal_icdf(y, mean2, std_dev2); };
     }
 
     double mutual_information()
     {
         // Check if copula funcs are not null (and that we are set up)
-        // Also check the data, probably
 
         return tree.compute_mutual_information();
 
@@ -81,17 +83,27 @@ public:
 
 private:
     KDTree tree;
-    Copula copula;
+    Copula * copula;
 
 };
 
 // Mutual information with normally distributed marginals
 double mutual_information_normal(double mean1, double std_dev1, double mean2, double std_dev2, std::vector<Point> & data, int min_pop = 10)
 {
-    MutualInformation mi;
+    MutualInformation mi(data);
+    // Make uniform in this function
+    // mi.setNormalCopula(mean1, std_dev1, mean2, std_dev2);
+    mi.setUniformCopula();
 
-    mi.setData(data);
-    mi.setNormalCopula(mean1, std_dev1, mean2, std_dev2);
+    return mi.mutual_information();
+
+}
+
+double mutual_information_normal(std::vector<Point> & data, int min_pop = 10)
+{
+    MutualInformation mi(data, min_pop);
+
+    mi.setUniformCopula();
 
     return mi.mutual_information();
 

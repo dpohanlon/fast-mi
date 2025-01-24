@@ -20,13 +20,28 @@
 #include "utils.hpp"
 #include "mutual_information.hpp"
 
+// Function to transform samples from normal to uniform distribution
+Eigen::MatrixXd transformToUniform(const Eigen::MatrixXd& samples, const Eigen::VectorXd& mean, const Eigen::VectorXd& std_dev) {
+    Eigen::MatrixXd uniform_samples(samples.rows(), samples.cols());
+
+    for (int i = 0; i < samples.cols(); ++i) {
+        for (int j = 0; j < samples.rows(); ++j) {
+            uniform_samples(j, i) = normal_cdf(samples(j, i), mean(j), std_dev(j));
+        }
+    }
+
+    return uniform_samples;
+}
+
 int main() {
 
     Eigen::VectorXd mean(2);
-    mean << 10.0, 50.0;
+    mean << 30.0, 150.0;
+    // mean << 0.0, 0.0;
 
     Eigen::VectorXd variance(2);
     variance << 5.0, 15.0;
+    // variance << 1.0, 1.0;
 
     Eigen::MatrixXd corr(2, 2);
     corr <<  1.0,  -0.7,
@@ -42,6 +57,8 @@ int main() {
 
         rho_vec.push_back(rho);
 
+        rho = 0.0;
+
         corr(0, 1) = rho;
         corr(1, 0) = rho;
 
@@ -51,16 +68,45 @@ int main() {
 
         Eigen::MatrixXd samples = sampleMultivariateNormal(mean, cov, num_samples);
 
-        double mi = mutual_information_normal(mean(0), std::sqrt(variance(0)), mean(1), std::sqrt(variance(1)), samples);
+        // Transform the samples to a uniform distribution
+        Eigen::VectorXd std_dev = variance.array().sqrt();
+        Eigen::MatrixXd uniform_samples = transformToUniform(samples, mean, std_dev);
 
-        double analyticalMI = -0.5 * std::log(1 - std::pow(corr(0, 1), 2));
+        std::cout << uniform_samples.rows() << " " << uniform_samples.cols() << std::endl;
+
+        std::cout << samples.rows() << " " << samples.cols() << std::endl;
+
+        std::string csv_filename = "dists.csv";
+
+        std::ofstream file(csv_filename);
+
+        file << "x,y,u,v\n";
+
+        file << std::fixed << std::setprecision(6);
+
+        for (int i = 0; i < samples.cols(); i++) {
+            file << samples(0, i) << "," << samples(1, i) << "," << uniform_samples(0, i) << "," << uniform_samples(1, i) << "\n";
+        }
+
+        file.close();
+
+        exit(0);
+
+        // Convert to vector of Points for the mutual information function
+        std::vector<Point> point_samples = convertSamplesToPoints(uniform_samples);
+
+        // double mi = mutual_information_normal(mean(0), std::sqrt(variance(0)), mean(1), std::sqrt(variance(1)), samples);
+
+        double mi = mutual_information_normal(point_samples);
+
+        double analyticalMI = -0.5 * std::log(1. - std::pow(corr(0, 1), 2));
 
         mi_analytical_vec.push_back(analyticalMI);
         mi_tree_vec.push_back(mi);
 
     }
 
-    std::string csv_filename = "mi_1k.csv";
+    std::string csv_filename = "mi_100k.csv";
 
     std::ofstream file(csv_filename);
 

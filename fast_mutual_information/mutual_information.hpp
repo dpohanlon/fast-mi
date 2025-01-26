@@ -99,7 +99,7 @@ double mutual_information_normal(double mean1, double std_dev1, double mean2, do
 
 }
 
-double mutual_information_normal(std::vector<Point> & data, int min_pop = 10)
+double mutual_information_normal(std::vector<Point> & data, int min_pop = 50)
 {
     MutualInformation mi(data, min_pop);
 

@@ -63,6 +63,8 @@ int main() {
 
     for (double rho = -0.99; rho <= 1.0; rho += step) {
 
+        // double rho = 0.0;
+
         rho_vec.push_back(rho);
 
         // rho = 0.0;
@@ -72,7 +74,7 @@ int main() {
 
         Eigen::MatrixXd cov = correlationToCovariance(corr, variance);
 
-        int num_samples = 1000;
+        int num_samples = 10000;
 
         Eigen::MatrixXd samples = sampleMultivariateNormal(mean, cov, num_samples);
 

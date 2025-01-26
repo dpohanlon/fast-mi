@@ -86,7 +86,8 @@ public:
 
         // std::cout << "Building" << std::endl;
 
-        root = build(unique_points, 0);
+        // root = build(unique_points, 0);
+        root = build(unique_points, 0, 0.0, 1.0, 0.0, 1.0);
         // build(unique_points, 0, 0.0, 1.0, 0.0, 1.0);
         // total_count = compute_total_count(root.get());
     }
@@ -106,9 +107,11 @@ public:
         int bins_x = std::pow(2, depth / 2);
         int bins_y = std::pow(2, depth / 2);
 
-        double correction = (1./(2. * total_count)) * ((bins_x - 1) + (bins_y - 1) - (bins_xy - 1));
+        // double correction = (1./(2. * total_count)) * ((bins_x - 1) + (bins_y - 1) - (bins_xy - 1));
 
         // double correction = (1./(2. * total_count)) * ( - (bins_xy - 1));
+
+        double correction = (bins_xy - 1) / (2. * total_count);
 
         std::cout << "pxy " << pxy << std::endl;
         return mi;
@@ -222,43 +225,27 @@ private:
         return unique_points;
     }
 
-    // // Recursive build function with early stopping
-    std::unique_ptr<KDNode> build(std::vector<std::pair<Point, int>> points, int depth) {
-
-        // std::cout << depth << std::endl;
-
-        if (points.empty()) return nullptr;
+    std::unique_ptr<KDNode> build(std::vector<std::pair<Point, int>>& points,
+                                  int depth,
+                                  double min_x, double max_x,
+                                  double min_y, double max_y) {
 
         auto node = std::make_unique<KDNode>();
-
-        // std::cout << "Updating box" << std::endl;
-
-        // Update bounding box
-        for (const auto& p : points) {
-            node->min_x = std::min(node->min_x, p.first.x);
-            node->max_x = std::max(node->max_x, p.first.x);
-            node->min_y = std::min(node->min_y, p.first.y);
-            node->max_y = std::max(node->max_y, p.first.y);
-        }
-
-        // std::cout << "Stopping? " << points.size() << " " << max_points << std::endl;
-        //
+        node->min_x = min_x;
+        node->max_x = max_x;
+        node->min_y = min_y;
+        node->max_y = max_y;
 
         // Check stopping criteria
         if (points.size() <= static_cast<size_t>(max_points)) {
             node->is_leaf = true;
-            node->points = std::move(points);
-            // if (node->points.size() < max_points) std::cout << "stopping " << node->points.size() << std::endl;
+            node->points = points;
             return node;
         }
 
-        // std::cout << "Stopping? No" << std::endl;
-
-        // Determine splitting dimension: alternate between x and y
+        // Determine splitting dimension: 0 for x, 1 for y
         int axis = depth % 2;
         node->split_dim = axis;
-
-        // These should already be sorted?
 
         // Sort points based on the splitting axis
         if (axis == 0) {
@@ -273,29 +260,25 @@ private:
                       });
         }
 
+
         // Find median
         size_t median_idx = points.size() / 2;
-        double median_val = (axis == 0) ? points[median_idx].first.x : points[median_idx].first.y;
-        // std::cout << "Med idx " << median_idx << " val " << median_val << std::endl;
+        double median_val = (axis == 0) ? points[median_idx].first.x
+                                        : points[median_idx].first.y;
         node->split_val = median_val;
 
         // Partition points into left and right subsets
         std::vector<std::pair<Point, int>> left_points;
         std::vector<std::pair<Point, int>> right_points;
 
-        // std::cout << "Populating " << median_val << std::endl;
-
         for (const auto& p : points) {
-            // Int for discrete!
             double coord = (axis == 0) ? p.first.x : p.first.y;
-            // std::cout << "med: " << median_val << " coord: " << coord << std::endl;
             if (coord < median_val) {
                 left_points.emplace_back(p);
             } else if (coord > median_val) {
                 right_points.emplace_back(p);
             } else {
                 // If coordinate equals median, distribute to balance the tree
-                // Simple strategy: alternate assignment
                 if (left_points.size() <= right_points.size()) {
                     left_points.emplace_back(p);
                 } else {
@@ -304,16 +287,134 @@ private:
             }
         }
 
-        // std::cout << "L " << left_points.size() << " R " << right_points.size() << std::endl;
+        // Handle potential empty subsets by enforcing the bounding box split
+        // Build left child
+        if (!left_points.empty()) {
+            node->left = build(left_points, depth + 1,
+                               min_x, (axis == 0 ? median_val : max_x),
+                               min_y, (axis == 1 ? median_val : max_y));
+        } else {
+            // Create an empty leaf for that region
+            auto leaf = std::make_unique<KDNode>();
+            leaf->is_leaf = true;
+            leaf->min_x = min_x;
+            leaf->max_x = (axis == 0 ? median_val : max_x);
+            leaf->min_y = min_y;
+            leaf->max_y = (axis == 1 ? median_val : max_y);
+            node->left = std::move(leaf);
+        }
 
-        // exit(0);
-
-        // Recursively build left and right subtrees
-        node->left = build(left_points, depth + 1);
-        node->right = build(right_points, depth + 1);
+        // Build right child
+        if (!right_points.empty()) {
+            node->right = build(right_points, depth + 1,
+                                (axis == 0 ? median_val : min_x), max_x,
+                                (axis == 1 ? median_val : min_y), max_y);
+        } else {
+            // Create an empty leaf for that region
+            auto leaf = std::make_unique<KDNode>();
+            leaf->is_leaf = true;
+            leaf->min_x = (axis == 0 ? median_val : min_x);
+            leaf->max_x = max_x;
+            leaf->min_y = (axis == 1 ? median_val : min_y);
+            leaf->max_y = max_y;
+            node->right = std::move(leaf);
+        }
 
         return node;
     }
+
+    // // // Recursive build function with early stopping
+    // std::unique_ptr<KDNode> build(std::vector<std::pair<Point, int>> points, int depth) {
+
+    //     // std::cout << depth << std::endl;
+
+    //     if (points.empty()) return nullptr;
+
+    //     auto node = std::make_unique<KDNode>();
+
+    //     // std::cout << "Updating box" << std::endl;
+
+    //     // Update bounding box
+    //     for (const auto& p : points) {
+    //         node->min_x = std::min(node->min_x, p.first.x);
+    //         node->max_x = std::max(node->max_x, p.first.x);
+    //         node->min_y = std::min(node->min_y, p.first.y);
+    //         node->max_y = std::max(node->max_y, p.first.y);
+    //     }
+
+    //     // std::cout << "Stopping? " << points.size() << " " << max_points << std::endl;
+    //     //
+
+    //     // Check stopping criteria
+    //     if (points.size() <= static_cast<size_t>(max_points)) {
+    //         node->is_leaf = true;
+    //         node->points = std::move(points);
+    //         // if (node->points.size() < max_points) std::cout << "stopping " << node->points.size() << std::endl;
+    //         return node;
+    //     }
+
+    //     // std::cout << "Stopping? No" << std::endl;
+
+    //     // Determine splitting dimension: alternate between x and y
+    //     int axis = depth % 2;
+    //     node->split_dim = axis;
+
+    //     // These should already be sorted?
+
+    //     // Sort points based on the splitting axis
+    //     if (axis == 0) {
+    //         std::sort(points.begin(), points.end(),
+    //                   [](const std::pair<Point, int>& a, const std::pair<Point, int>& b) -> bool {
+    //                       return a.first.x < b.first.x;
+    //                   });
+    //     } else {
+    //         std::sort(points.begin(), points.end(),
+    //                   [](const std::pair<Point, int>& a, const std::pair<Point, int>& b) -> bool {
+    //                       return a.first.y < b.first.y;
+    //                   });
+    //     }
+
+    //     // Find median
+    //     size_t median_idx = points.size() / 2;
+    //     double median_val = (axis == 0) ? points[median_idx].first.x : points[median_idx].first.y;
+    //     // std::cout << "Med idx " << median_idx << " val " << median_val << std::endl;
+    //     node->split_val = median_val;
+
+    //     // Partition points into left and right subsets
+    //     std::vector<std::pair<Point, int>> left_points;
+    //     std::vector<std::pair<Point, int>> right_points;
+
+    //     // std::cout << "Populating " << median_val << std::endl;
+
+    //     for (const auto& p : points) {
+    //         // Int for discrete!
+    //         double coord = (axis == 0) ? p.first.x : p.first.y;
+    //         // std::cout << "med: " << median_val << " coord: " << coord << std::endl;
+    //         if (coord < median_val) {
+    //             left_points.emplace_back(p);
+    //         } else if (coord > median_val) {
+    //             right_points.emplace_back(p);
+    //         } else {
+    //             // If coordinate equals median, distribute to balance the tree
+    //             // Simple strategy: alternate assignment
+    //             if (left_points.size() <= right_points.size()) {
+    //                 left_points.emplace_back(p);
+    //             } else {
+    //                 right_points.emplace_back(p);
+    //             }
+    //         }
+    //     }
+
+    //     // std::cout << "L " << left_points.size() << " R " << right_points.size() << std::endl;
+
+    //     // exit(0);
+
+    //     // Recursively build left and right subtrees
+    //     node->left = build(left_points, depth + 1);
+    //     node->right = build(right_points, depth + 1);
+
+    //     return node;
+    // }
 
     // Function to compute total count of points
     // long long compute_total_count(const KDNode* node) const {
@@ -369,42 +470,15 @@ private:
         return std::make_pair(1.0, 1.0);
     }
 
-    // Take either a function p_x, p_y, or vectors p_x, p_y
-
-    // void traverse_and_compute(const KDNode* node,
-    //                            double& mi) const {
-    //     if (!node) return;
-
-    //     if (node->is_leaf) {
-    //         for (const auto& p : node->points) {
-
-    //             double bin_area = node->get_bin_area();
-
-    //             // double p_xy = calculate_p_xy(p.second);//, bin_area);
-    //             double p_xy = calculate_p_xy(p.size());//, bin_area);
-    //             // Calculate p_x and p_y using the provided functions and the inverse CDF trick
-    //             std::pair<double, double> marginal_probs = calculate_marginal_probs(p.first);
-    //             double p_x = marginal_probs.first;
-    //             double p_y = marginal_probs.second;
-
-    //             // std::cout << "got marginals" << std::endl;
-
-    //             if (p_xy > 0 && p_x > 0 && p_y > 0) {
-    //                 mi += p_xy * std::log(p_xy / (p_x * p_y));
-    //             }
-    //         }
-    //         return;
-    //     }
-
-    //     // Recurse on left and right children
-    //     traverse_and_compute(node->left.get(), mi);
-    //     traverse_and_compute(node->right.get(), mi);
-    // }
-
     void traverse_and_compute(const KDNode* node, double& mi, double &pxy) const {
         if (!node) return;
 
         if (node->is_leaf) {
+
+            // std::cout << "x: " << node->min_x << " " << node->max_x << " \n";
+            // std::cout << "y: " << node->min_y << " " << node->max_y << std::endl;
+            // std::cout << std::endl;
+
             // 1. Count points in the bin (consider duplicates)
             int bin_count = node->points.size(); // Adjust for duplicates if needed
             // std::cout << bin_count << std::endl;
@@ -426,15 +500,28 @@ private:
             double w_y = node->max_y - node->min_y;
 
             if (p_xy > 0) {
-                std::cout << p_xy << " " << std::log(p_xy) << std::endl;
+                // std::cout << p_xy << " " << std::log(p_xy) << std::endl;
                 // p_x_bin and p_y_bin are both 1.0 due to the copula transformation
-                mi += p_xy * std::log(p_xy / (w_x * w_y)) * bin_area;  // Add epsilon for numerical stability
+                // mi += p_xy * std::log(p_xy / (w_x * w_y)) * bin_area;  // Add epsilon for numerical stability
+                mi += p_xy * std::log(p_xy) * bin_area;  // Add epsilon for numerical stability
             }
 
-            pxy += p_xy * bin_area;
+            pxy += bin_area;
+
+            // int bin_count = node->points.size();
+            // double bin_prob = static_cast<double>(bin_count) / static_cast<double>(total_count);
+            // double w_x = node->max_x - node->min_x;
+            // double w_y = node->max_y - node->min_y;
+
+            // if (bin_prob > 0) {
+            //     mi += bin_prob * std::log(bin_prob / (w_x * w_y));
+            // }
+            // pxy += bin_prob;
 
             return;
         }
+
+
 
         // Recurse on left and right children
         traverse_and_compute(node->left.get(), mi, pxy);

@@ -40,12 +40,15 @@ struct KDNode {
     KDNode() : is_leaf(false), split_dim(0), split_val(0),
                min_x(1E8), max_x(-1E8),
                min_y(1E8), max_y(-1E8) {}
+               // min_x(1.0), max_x(0.0),
+               // min_y(1.0), max_y(0.0) {}
 
     double get_bin_area() const {
         double width = this->max_x - this->min_x;
         double height = this->max_y - this->min_y;
         return width * height;
     }
+
 };
 
 // kd-tree class
@@ -57,7 +60,11 @@ public:
     KDTree(const std::vector<Point>& points, Copula * copula, int max_points_per_leaf = 10)
         : max_points(max_points_per_leaf), copula(copula) {
 
-        total_count = points.size(); // Or # leaves?
+        // total_count = points.size(); // Or # leaves?
+
+        long long sum_points = 0;
+        for (auto &p : points) sum_points += 1; // or if using duplicates, sum up p.second
+        total_count = sum_points;
 
         // Preprocess points to count duplicates
 
@@ -80,6 +87,7 @@ public:
         // std::cout << "Building" << std::endl;
 
         root = build(unique_points, 0);
+        // build(unique_points, 0, 0.0, 1.0, 0.0, 1.0);
         // total_count = compute_total_count(root.get());
     }
 
@@ -90,8 +98,36 @@ public:
 
         traverse_and_compute(root.get(), mi, pxy);
 
+        int depth = get_tree_depth();
+
+        std::cout << "depth " << depth << std::endl;
+
+        int bins_xy = std::pow(2, depth);
+        int bins_x = std::pow(2, depth / 2);
+        int bins_y = std::pow(2, depth / 2);
+
+        double correction = (1./(2. * total_count)) * ((bins_x - 1) + (bins_y - 1) - (bins_xy - 1));
+
+        // double correction = (1./(2. * total_count)) * ( - (bins_xy - 1));
+
         std::cout << "pxy " << pxy << std::endl;
         return mi;
+    }
+
+    int calculate_depth(const KDNode* node) const {
+        if (!node) return 0; // Base case: empty node
+        if (node->is_leaf) return 1; // Leaf nodes contribute a depth of 1
+
+        // Recurse on left and right children and return the maximum depth
+        int left_depth = calculate_depth(node->left.get());
+        int right_depth = calculate_depth(node->right.get());
+
+        return 1 + std::max(left_depth, right_depth);
+    }
+
+    // Wrapper function to calculate depth from the root
+    int get_tree_depth() const {
+        return calculate_depth(root.get());
     }
 
 private:
@@ -186,7 +222,7 @@ private:
         return unique_points;
     }
 
-    // Recursive build function with early stopping
+    // // Recursive build function with early stopping
     std::unique_ptr<KDNode> build(std::vector<std::pair<Point, int>> points, int depth) {
 
         // std::cout << depth << std::endl;
@@ -206,12 +242,13 @@ private:
         }
 
         // std::cout << "Stopping? " << points.size() << " " << max_points << std::endl;
+        //
 
         // Check stopping criteria
         if (points.size() <= static_cast<size_t>(max_points)) {
             node->is_leaf = true;
             node->points = std::move(points);
-            // std::cout << "stopping " << node->points.size() << std::endl;
+            // if (node->points.size() < max_points) std::cout << "stopping " << node->points.size() << std::endl;
             return node;
         }
 
@@ -235,8 +272,6 @@ private:
                           return a.first.y < b.first.y;
                       });
         }
-
-        // std::cout << "Splitting" << std::endl;
 
         // Find median
         size_t median_idx = points.size() / 2;
@@ -311,6 +346,7 @@ private:
         return static_cast<double>(count) / (static_cast<double>(total_count) * bin_area);
     }
 
+
     // std::pair<double, double> calculate_marginal_probs(const Point& point) const {
 
     //     // std::cout << point.x << " " << point.y << std::endl;
@@ -375,16 +411,24 @@ private:
 
             double bin_area = node->get_bin_area();
 
+            // std::cout << "area " << bin_area << std::endl;
+
             // 2. Calculate p_xy for the bin
             double p_xy = calculate_p_xy(bin_count, bin_area);
+
+            // std::cout << p_xy << std::endl;
 
             // 4. Calculate MI contribution for the bin
 
             // Add p_x, p_y for generality?
+            //
+            double w_x = node->max_x - node->min_x;
+            double w_y = node->max_y - node->min_y;
 
             if (p_xy > 0) {
+                std::cout << p_xy << " " << std::log(p_xy) << std::endl;
                 // p_x_bin and p_y_bin are both 1.0 due to the copula transformation
-                mi += p_xy * std::log(p_xy) * bin_area;  // Add epsilon for numerical stability
+                mi += p_xy * std::log(p_xy / (w_x * w_y)) * bin_area;  // Add epsilon for numerical stability
             }
 
             pxy += p_xy * bin_area;
@@ -398,3 +442,46 @@ private:
     }
 
 };
+
+//     void traverse_and_compute(const KDNode* node,
+//                             double& mi,
+//                             double& pxy_accum) const
+//     {
+//         if (!node) return;
+
+//         if (node->is_leaf) {
+//             // Sum up total points in this bin
+//             int bin_count = 0;
+//             for (auto &pr : node->points) {
+//                 bin_count += pr.second;
+//             }
+//             double bin_area = node->get_bin_area();
+
+//             // p_xy approximate within that bin
+//             double p_xy_bin = (double)bin_count / (total_count * bin_area);
+
+//             // Get average p_x and p_y inside this bin
+//             double p_x_bin = 0.0;
+//             double p_y_bin = 0.0;
+//             for (auto &pr : node->points) {
+//                 // pr.first.x, pr.first.y
+//                 p_x_bin += copula->p_x(pr.first.x) * pr.second;
+//                 p_y_bin += copula->p_y(pr.first.y) * pr.second;
+//             }
+//             p_x_bin /= bin_count;
+//             p_y_bin /= bin_count;
+
+//             // Add the local contribution to MI:
+//             // p_xy_bin * log( p_xy_bin / [p_x_bin * p_y_bin] ) * bin_area
+//             if (p_xy_bin > 1e-14 && p_x_bin > 1e-14 && p_y_bin > 1e-14) {
+//                 mi += p_xy_bin * std::log(p_xy_bin / (p_x_bin * p_y_bin)) * bin_area;
+//             }
+
+//             pxy_accum += p_xy_bin * bin_area;
+//             return;
+//         }
+
+//         traverse_and_compute(node->left.get(), mi, pxy_accum);
+//         traverse_and_compute(node->right.get(), mi, pxy_accum);
+//     }
+// };

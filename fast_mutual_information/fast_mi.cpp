@@ -33,6 +33,14 @@ Eigen::MatrixXd transformToUniform(const Eigen::MatrixXd& samples, const Eigen::
     return uniform_samples;
 }
 
+void clamp_uniform_samples(std::vector<Point>& points) {
+    constexpr double CLAMP_EPS = 1e-12;
+    for (auto &pt : points) {
+        pt.x = std::clamp(pt.x, CLAMP_EPS, 1.0 - CLAMP_EPS);
+        pt.y = std::clamp(pt.y, CLAMP_EPS, 1.0 - CLAMP_EPS);
+    }
+}
+
 int main() {
 
     Eigen::VectorXd mean(2);
@@ -57,7 +65,7 @@ int main() {
 
         rho_vec.push_back(rho);
 
-        rho = 0.0;
+        // rho = 0.0;
 
         corr(0, 1) = rho;
         corr(1, 0) = rho;
@@ -72,34 +80,36 @@ int main() {
         Eigen::VectorXd std_dev = variance.array().sqrt();
         Eigen::MatrixXd uniform_samples = transformToUniform(samples, mean, std_dev);
 
-        std::cout << uniform_samples.rows() << " " << uniform_samples.cols() << std::endl;
+        // std::cout << uniform_samples.rows() << " " << uniform_samples.cols() << std::endl;
 
-        std::cout << samples.rows() << " " << samples.cols() << std::endl;
+        // std::cout << samples.rows() << " " << samples.cols() << std::endl;
 
-        std::string csv_filename = "dists.csv";
+        // std::string csv_filename = "dists.csv";
 
-        std::ofstream file(csv_filename);
+        // std::ofstream file(csv_filename);
 
-        file << "x,y,u,v\n";
+        // file << "x,y,u,v\n";
 
-        file << std::fixed << std::setprecision(6);
+        // file << std::fixed << std::setprecision(6);
 
-        for (int i = 0; i < samples.cols(); i++) {
-            file << samples(0, i) << "," << samples(1, i) << "," << uniform_samples(0, i) << "," << uniform_samples(1, i) << "\n";
-        }
+        // for (int i = 0; i < samples.cols(); i++) {
+        //     file << samples(0, i) << "," << samples(1, i) << "," << uniform_samples(0, i) << "," << uniform_samples(1, i) << "\n";
+        // }
 
-        file.close();
+        // file.close();
 
-        exit(0);
+        // exit(0);
 
         // Convert to vector of Points for the mutual information function
         std::vector<Point> point_samples = convertSamplesToPoints(uniform_samples);
 
         // double mi = mutual_information_normal(mean(0), std::sqrt(variance(0)), mean(1), std::sqrt(variance(1)), samples);
 
+        clamp_uniform_samples(point_samples);
+
         double mi = mutual_information_normal(point_samples);
 
-        double analyticalMI = -0.5 * std::log(1. - std::pow(corr(0, 1), 2));
+        double analyticalMI = -0.5 * std::log(1. - std::pow(corr(0, 1), 2.));
 
         mi_analytical_vec.push_back(analyticalMI);
         mi_tree_vec.push_back(mi);

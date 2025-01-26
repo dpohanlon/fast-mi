@@ -90,7 +90,7 @@ private:
 // Mutual information with normally distributed marginals
 double mutual_information_normal(double mean1, double std_dev1, double mean2, double std_dev2, std::vector<Point> & data, int min_pop = 10)
 {
-    MutualInformation mi(data);
+    MutualInformation mi(data, min_pop);
     // Make uniform in this function
     // mi.setNormalCopula(mean1, std_dev1, mean2, std_dev2);
     mi.setUniformCopula();

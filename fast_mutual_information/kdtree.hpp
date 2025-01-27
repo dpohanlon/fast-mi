@@ -15,8 +15,6 @@
 
 #include "copula.hpp"
 
-// Would a template here be overkill?
-
 template <typename T>
 struct Point {
     T x;
@@ -33,7 +31,7 @@ struct KDNode {
 
     bool is_leaf;
     int split_dim; // 0 for x, 1 for y
-    double split_val;
+    T split_val;
 
     std::unique_ptr<KDNode> left;
     std::unique_ptr<KDNode> right;
@@ -42,13 +40,23 @@ struct KDNode {
                min_x(1E8), max_x(-1E8),
                min_y(1E8), max_y(-1E8) {}
 
-    double get_bin_area() const {
-        double width = this->max_x - this->min_x;
-        double height = this->max_y - this->min_y;
-        return width * height;
-    }
+    double get_bin_area(void) const;
 
 };
+
+template <typename T>
+double KDNode<T>::get_bin_area() const {
+    double width = this->max_x - this->min_x;
+    double height = this->max_y - this->min_y;
+    return width * height;
+}
+
+template <>
+double KDNode<int>::get_bin_area() const {
+    double width = this->max_x - this->min_x;
+    double height = this->max_y - this->min_y;
+    return width * height;
+}
 
 template <typename T>
 class KDTree {

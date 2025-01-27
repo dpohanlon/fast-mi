@@ -56,9 +56,7 @@ std::vector<Point<int>> convertSamplesToPointsQuantised(
             throw std::invalid_argument("Invalid rounding_mode. Choose from 'round', 'floor', 'ceil', or 'truncate'.");
         }
 
-        // Create a Point and add to the vector
         points.emplace_back(Point<int>{ x_int, y_int });
-
     }
 
     return points;

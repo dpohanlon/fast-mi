@@ -9,6 +9,7 @@
 #include "mvn.hpp"
 #include "kdtree.hpp"
 #include "copula.hpp"
+
 // Set up with a class, configure, then run MI calculation
 // TODO: Take Eigen vectors of means and variances
 
@@ -89,13 +90,12 @@ private:
 template <typename T>
 double mutual_information(std::vector<Point<T>> & data, int min_pop = 25)
 {
-    MutualInformation<double> mi(data, min_pop);
+    MutualInformation<T> mi(data, min_pop);
     mi.setUniformCopula();
 
     return mi.mutual_information();
 
 }
-
 
 double mutual_information(Eigen::MatrixXd & data, int min_pop = 25)
 {
@@ -128,10 +128,7 @@ double mutual_information_quantised(Eigen::MatrixXd & data, int min_pop = 25)
 
     std::vector<Point<int>> point_samples = convertSamplesToPointsQuantised(data);
 
-    std::cout << point_samples[123].x << " " << point_samples[123].y << std::endl;
-
-    // return mutual_information(point_samples, min_pop);
-    return 1.0;
+    return mutual_information(point_samples, min_pop);
 }
 
 // // Mutual information with NB distributed marginals

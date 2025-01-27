@@ -26,7 +26,7 @@ int main() {
     mean << 30.0, 150.0;
 
     Eigen::VectorXd variance(2);
-    variance << 5.0, 15.0;
+    variance << 10.0, 25.0;
 
     Eigen::MatrixXd corr(2, 2);
     corr <<  1.0,  -0.7,
@@ -52,20 +52,14 @@ int main() {
         Eigen::MatrixXd samples = sampleMultivariateNormal(mean, cov, num_samples);
 
         Eigen::VectorXd std_dev = variance.array().sqrt();
-        Eigen::MatrixXd uniform_samples = transformToUniform(samples, mean, std_dev);
+        // Eigen::MatrixXd uniform_samples = transformToUniform(samples, mean, std_dev);
 
-        clamp_uniform_samples(uniform_samples);
+        double mi = mutual_information_quantised(samples);
 
-        // // Convert to vector of Points for the mutual information function
-        // std::vector<RPoint> point_samples = convertSamplesToPoints(uniform_samples);
+        double analyticalMI = -0.5 * std::log(1. - std::pow(corr(0, 1), 2.));
 
-        double mi = mutual_information_quantised(uniform_samples);
-
-
-        // double analyticalMI = -0.5 * std::log(1. - std::pow(corr(0, 1), 2.));
-
-        // mi_analytical_vec.push_back(analyticalMI);
-        // mi_tree_vec.push_back(mi);
+        mi_analytical_vec.push_back(analyticalMI);
+        mi_tree_vec.push_back(mi);
 
     }
 

@@ -20,20 +20,7 @@
 #include "utils.hpp"
 #include "mutual_information.hpp"
 
-// Function to transform samples from normal to uniform distribution
-Eigen::MatrixXd transformToUniform(const Eigen::MatrixXd& samples, const Eigen::VectorXd& mean, const Eigen::VectorXd& std_dev) {
-    Eigen::MatrixXd uniform_samples(samples.rows(), samples.cols());
-
-    for (int i = 0; i < samples.cols(); ++i) {
-        for (int j = 0; j < samples.rows(); ++j) {
-            uniform_samples(j, i) = normal_cdf(samples(j, i), mean(j), std_dev(j));
-        }
-    }
-
-    return uniform_samples;
-}
-
-void clamp_uniform_samples(std::vector<Point>& points) {
+void clamp_uniform_samples(std::vector<RPoint>& points) {
     constexpr double CLAMP_EPS = 1e-12;
     for (auto &pt : points) {
         pt.x = std::clamp(pt.x, CLAMP_EPS, 1.0 - CLAMP_EPS);
@@ -63,8 +50,6 @@ int main() {
 
     for (double rho = -0.99; rho <= 1.0; rho += step) {
 
-        // double rho = 0.0;
-
         rho_vec.push_back(rho);
 
         corr(0, 1) = rho;
@@ -81,11 +66,11 @@ int main() {
         Eigen::MatrixXd uniform_samples = transformToUniform(samples, mean, std_dev);
 
         // Convert to vector of Points for the mutual information function
-        std::vector<Point> point_samples = convertSamplesToPoints(uniform_samples);
+        std::vector<RPoint> point_samples = convertSamplesToPoints(uniform_samples);
 
         clamp_uniform_samples(point_samples);
 
-        double mi = mutual_information_normal(point_samples);
+        double mi = mutual_information(point_samples);
 
         double analyticalMI = -0.5 * std::log(1. - std::pow(corr(0, 1), 2.));
 

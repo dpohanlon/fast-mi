@@ -27,7 +27,7 @@ int generate_poisson(double lambda, std::mt19937& rng) {
     return k - 1;
 }
 
-std::vector<Point> generate_correlated_data(int num_points = 1000){
+std::vector<RPoint> generate_correlated_data(int num_points = 1000){
     // Seed the random number generator with a high-resolution clock
     std::mt19937 rng(std::chrono::high_resolution_clock::now().time_since_epoch().count());
 
@@ -55,7 +55,7 @@ std::vector<Point> generate_correlated_data(int num_points = 1000){
     std::gamma_distribution<double> gamma_shared_y(r_y, shared_beta_y);
 
     // Vector to store the generated points
-    std::vector<Point> dataset;
+    std::vector<RPoint> dataset;
     dataset.reserve(num_points);
 
     for (int i = 0; i < num_points; ++i) {
@@ -68,7 +68,7 @@ std::vector<Point> generate_correlated_data(int num_points = 1000){
         double y = generate_poisson(z_shared_y, rng);
 
         // Store the generated point
-        dataset.push_back(Point{ x, y });
+        dataset.push_back(RPoint{ x, y });
     }
 
     return dataset;

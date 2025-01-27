@@ -14,6 +14,8 @@
 #include <cmath>
 #include <functional>
 
+#include <Eigen/Dense>
+
 #include "kdtree.hpp"
 #include "tests.hpp"
 #include "mvn.hpp"

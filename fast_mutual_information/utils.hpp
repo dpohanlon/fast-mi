@@ -2,6 +2,11 @@
 
 #include <numeric>
 
+#include <Eigen/Dense>
+
+#include "point.hpp"
+#include "mvn.hpp"
+
 /**
  * @brief Converts an Eigen::MatrixXd of multivariate normal samples to a std::vector<Point>.
  *
@@ -106,4 +111,26 @@ void clamp_uniform_samples(std::vector<Point<double>>& points) {
 
 void clamp_uniform_samples(Eigen::MatrixXd& data) {
     data = data.cwiseMax(0.0).cwiseMin(1.0);
+}
+
+template <typename T>
+std::tuple<T, T, T, T> get_bounds(const std::vector<Point<T>>& points) {
+  if (points.empty()) {
+    // Handle empty case, e.g., return default values or throw an exception.
+    return std::make_tuple(T{}, T{}, T{}, T{});
+  }
+
+  T min_x = std::numeric_limits<T>::max();
+  T max_x = std::numeric_limits<T>::min();
+  T min_y = std::numeric_limits<T>::max();
+  T max_y = std::numeric_limits<T>::min();
+
+  for (const auto& point : points) {
+    min_x = std::min(min_x, point.x);
+    max_x = std::max(max_x, point.x);
+    min_y = std::min(min_y, point.y);
+    max_y = std::max(max_y, point.y);
+  }
+
+  return {min_x, max_x, min_y, max_y};
 }

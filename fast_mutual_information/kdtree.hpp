@@ -14,12 +14,9 @@
 #include "absl/container/flat_hash_map.h"
 
 #include "copula.hpp"
+#include "point.hpp"
+#include "utils.hpp"
 
-template <typename T>
-struct Point {
-    T x;
-    T y;
-};
 
 template <typename T>
 struct KDNode {
@@ -58,11 +55,13 @@ struct KDNode {
 
 template <typename T>
 int KDNode<T>::total_counts(void) const {
+    // Here we assume that the points are unique, the second element of the pair is 1
     return this->points.size();
 }
 
 template <>
 int KDNode<int>::total_counts(void) const {
+    // Here we assume that the points are maybe not unique, and the second element of the pair could be greater than 1
     int count = 0;
     for (auto p : this->points) {
         count += p.second;
@@ -77,20 +76,18 @@ public:
 
     KDTree() {}
 
-    KDTree(const std::vector<Point<T>>& points, Copula * copula, int max_points_per_leaf = 10)
-        : max_points(max_points_per_leaf), copula(copula) {
+    // Add version with duplicates - template specialise on ints
 
-        long long sum_points = 0;
-        for (auto &p : points) sum_points += 1; // or if using duplicates, sum up p.second
-        total_count = sum_points;
+    KDTree(const std::vector<Point<T>>& points, Copula * copula, int max_points_per_leaf = 10);
 
-        std::vector<std::pair<Point<T>, int>> unique_points;
+    double get_correction() const {
+        int depth = get_tree_depth();
 
-        for (int i = 0; i < points.size(); i++) {
-            unique_points.push_back(std::make_pair(points[i], 1));
-        }
+        int bins_xy = std::pow(2, depth);
+        int bins_x = std::pow(2, depth / 2);
+        int bins_y = std::pow(2, depth / 2);
 
-        root = build(unique_points, 0, 0.0, 1.0, 0.0, 1.0);
+        return (bins_xy - 1) / (2. * total_count);
     }
 
     // Function to compute mutual information
@@ -99,14 +96,6 @@ public:
         double area = 0.0;
 
         traverse_and_compute(root.get(), mi, area);
-
-        // int depth = get_tree_depth();
-
-        // int bins_xy = std::pow(2, depth);
-        // int bins_x = std::pow(2, depth / 2);
-        // int bins_y = std::pow(2, depth / 2);
-
-        // double correction = (bins_xy - 1) / (2. * total_count);
 
         return mi;
     }
@@ -128,15 +117,15 @@ public:
 private:
     std::unique_ptr<KDNode<T>> root;
     int max_points;
-    long long total_count;
+    int total_count;
 
     Copula * copula;
 
     double get_bin_area(const KDNode<T> & node) const;
 
-    std::vector<std::pair<Point<T>, int>> count_duplicates_absl(const std::vector<Point<T>>& points) {
+    std::vector<std::pair<Point<int>, int>> count_duplicates_absl(const std::vector<Point<int>>& points) {
 
-        absl::flat_hash_map<std::pair<double, double>, int, absl::Hash<std::pair<double, double>>> point_map;
+        absl::flat_hash_map<std::pair<int, int>, int, absl::Hash<std::pair<int, int>>> point_map;
 
         point_map.reserve(points.size() / 2);
 
@@ -145,7 +134,7 @@ private:
             point_map[key]++;
         }
 
-        std::vector<std::pair<Point<T>, int>> unique_points;
+        std::vector<std::pair<Point<int>, int>> unique_points;
         unique_points.reserve(point_map.size());
 
         for (const auto& entry : point_map) {
@@ -154,12 +143,6 @@ private:
 
         return unique_points;
     }
-
-    struct pair_hash {
-        std::size_t operator()(const std::pair<double, double>& p) const {
-            return std::hash<double>()(p.first) ^ (std::hash<double>()(p.second) << 1);
-        }
-    };
 
     std::unique_ptr<KDNode<T>> build(std::vector<std::pair<Point<T>, int>>& points,
                                   int depth,
@@ -288,6 +271,44 @@ private:
         traverse_and_compute(node->right.get(), mi, area);
     }
 };
+
+template <typename T>
+KDTree<T>::KDTree(const std::vector<Point<T>>& points, Copula * copula, int max_points_per_leaf)
+    : max_points(max_points_per_leaf), copula(copula) {
+
+    total_count = points.size();
+
+    std::vector<std::pair<Point<T>, int>> unique_points;
+
+    for (int i = 0; i < points.size(); i++) {
+        unique_points.push_back(std::make_pair(points[i], 1));
+    }
+
+    // These are the boundaries of the unit square for assumed U[0, 1] if passed anything other than ints
+
+    root = build(unique_points, 0, 0.0, 1.0, 0.0, 1.0);
+}
+
+template <>
+KDTree<int>::KDTree(const std::vector<Point<int>>& points, Copula * copula, int max_points_per_leaf)
+    : max_points(max_points_per_leaf), copula(copula) {
+
+    total_count = points.size();
+
+    std::vector<std::pair<Point<int>, int>> unique_points = count_duplicates_absl(points);
+
+    for (auto p : unique_points) {
+        std::cout << p.first.x << " " << p.first.y << " " << p.second << std::endl;
+    }
+
+    // These are the boundaries of the input data that then get mapped to [0, 1, 0, 1] when transformed via the CDF
+
+    auto [min_x, max_x, min_y, max_y] = get_bounds(points);
+
+    std::cout << min_x << " " << max_x << " " << min_y << " " << max_y << std::endl;
+
+    root = build(unique_points, 0, min_x, max_x, min_y, max_y);
+}
 
 template <typename T>
 double KDTree<T>::get_bin_area(const KDNode<T> & node) const {

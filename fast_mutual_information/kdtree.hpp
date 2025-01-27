@@ -48,11 +48,28 @@ struct KDNode {
         return max_y - min_y;
     }
 
+    int total_counts(void) const;
+
     double get_bin_area(void) const {
         return this->get_width() * this->get_height();
     }
 
 };
+
+template <typename T>
+int KDNode<T>::total_counts(void) const {
+    return this->points.size();
+}
+
+template <>
+int KDNode<int>::total_counts(void) const {
+    int count = 0;
+    for (auto p : this->points) {
+        count += p.second;
+    }
+
+    return count;
+}
 
 template <typename T>
 class KDTree {
@@ -233,19 +250,15 @@ private:
         return node;
     }
 
-    long long compute_total_count(const KDNode<T>* node) const {
+    int compute_total_count(const KDNode<T>* node) const {
         if (!node) return 0;
         if (node->is_leaf) {
-            return 1;
+            return node->total_counts();
         }
         return compute_total_count(node->left.get()) + compute_total_count(node->right.get());
     }
 
     // Can I make the underlying storage here an eigen vector, and then just push it through the NB calculation? Or maybe even populate it with points and the corresponding NB beforehand? -> Take the two Eigen vectors, calculate the NB, and then pop the points with (x, y, nb_x, nb_y)
-
-    double calculate_p_xy(int count) const {
-        return static_cast<double>(count) / static_cast<double>(total_count);
-    }
 
     double calculate_p_xy(int count, double bin_area) const {
         return static_cast<double>(count) / (static_cast<double>(total_count) * bin_area);
@@ -256,14 +269,11 @@ private:
 
         if (node->is_leaf) {
 
-            int bin_count = node->points.size();
+            int bin_count = node->total_counts();
 
             double bin_area = this->get_bin_area(*node);
 
             double p_xy = calculate_p_xy(bin_count, bin_area);
-
-            double w_x = node->max_x - node->min_x;
-            double w_y = node->max_y - node->min_y;
 
             if (p_xy > 0) {
                 mi += p_xy * std::log(p_xy) * bin_area;

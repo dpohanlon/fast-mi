@@ -49,14 +49,14 @@ int main() {
 
         Eigen::MatrixXd cov = correlationToCovariance(corr, variance);
 
-        int num_samples = 1000;
+        int num_samples = 100000;
 
         Eigen::MatrixXd samples = sampleMultivariateNormal(mean, cov, num_samples);
 
         Eigen::VectorXd std_dev = variance.array().sqrt();
         // Eigen::MatrixXd uniform_samples = transformToUniform(samples, mean, std_dev);
 
-        double mi = mutual_information_quantised(mean(0), std_dev(0), mean(1), std_dev(1), samples);
+        double mi = mutual_information_quantised(mean(0), std_dev(0), mean(1), std_dev(1), samples, 100);
 
         double analyticalMI = -0.5 * std::log(1. - std::pow(corr(0, 1), 2.));
 

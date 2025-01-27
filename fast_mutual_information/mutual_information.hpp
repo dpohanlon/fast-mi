@@ -99,7 +99,7 @@ double mutual_information(std::vector<Point<T>> & data, int min_pop = 25)
 
 // Pass normal parameters so the CDF can be calculated on the fly
 template <typename T>
-double mutual_information(double mean1, double std_dev1, double mean2, double std_dev2, std::vector<Point<T>> & data, int min_pop = 10)
+double mutual_information(double mean1, double std_dev1, double mean2, double std_dev2, std::vector<Point<T>> & data, int min_pop = 25)
 {
     MutualInformation<T> mi(data, min_pop);
     mi.setNormalCDF(mean1, std_dev1, mean2, std_dev2);

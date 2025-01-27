@@ -95,7 +95,7 @@ public:
 
         traverse_and_compute(root.get(), mi, area);
 
-        std::cout << area << std::endl;
+        // std::cout << area << std::endl;
 
         return mi;
     }
@@ -157,6 +157,7 @@ private:
 
         bool degenerate_split = (max_x - min_x < 1E-8) || (max_y - min_y < 1E-8);
 
+        // This is controlled by the number of points rather than the number of points including the duplicates as we don't want to end up with nowhere to split
         if (points.size() <= static_cast<size_t>(max_points) || degenerate_split) {
             node->is_leaf = true;
             node->points = points;
@@ -181,7 +182,7 @@ private:
 
         size_t median_idx = points.size() / 2;
         T median_val = (axis == 0) ? points[median_idx].first.x
-                                        : points[median_idx].first.y;
+                                   : points[median_idx].first.y;
         node->split_val = median_val;
 
         std::vector<std::pair<Point<T>, int>> left_points;
@@ -204,7 +205,8 @@ private:
 
         // Handle potential empty subsets by enforcing the bounding box split
 
-        if (!left_points.empty()) {
+        // if (!left_points.empty()) {
+         if (!left_points.empty()) {
             // if (left_points.size() == 1) {
             //     std::cout << "Left size 1\n";
             // }
@@ -213,7 +215,7 @@ private:
                                min_x, (axis == 0 ? median_val : max_x),
                                min_y, (axis == 1 ? median_val : max_y));
         } else {
-            // std::cout << "Left empty\n";
+            std::cout << "Left empty\n";
             auto leaf = std::make_unique<KDNode<T>>();
             leaf->is_leaf = true;
             leaf->min_x = min_x;
@@ -232,7 +234,7 @@ private:
                                 (axis == 0 ? median_val : min_x), max_x,
                                 (axis == 1 ? median_val : min_y), max_y);
         } else {
-            // std::cout << "Right empty\n";
+            std::cout << "Right empty\n";
             auto leaf = std::make_unique<KDNode<T>>();
             leaf->is_leaf = true;
             leaf->min_x = (axis == 0 ? median_val : min_x);
@@ -368,7 +370,8 @@ double KDTree<int>::get_bin_area(const KDNode<int> & node) const {
     // std::cout << std::endl;
 
     double width = x_max - x_min;
-    double height = x_max - x_min;
+    double height = y_max - y_min;
 
     return width * height;
+
 }

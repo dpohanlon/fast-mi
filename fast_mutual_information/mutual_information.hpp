@@ -75,7 +75,7 @@ public:
 
     double mutual_information()
     {
-        // Check if copula funcs are not null (and that we are set up)
+        // TODO: Check if copula funcs are not null (and that we are set up)
 
         return tree.compute_mutual_information();
 
@@ -91,8 +91,6 @@ private:
 double mutual_information_normal(double mean1, double std_dev1, double mean2, double std_dev2, std::vector<Point> & data, int min_pop = 10)
 {
     MutualInformation mi(data, min_pop);
-    // Make uniform in this function
-    // mi.setNormalCopula(mean1, std_dev1, mean2, std_dev2);
     mi.setUniformCopula();
 
     return mi.mutual_information();
@@ -102,14 +100,12 @@ double mutual_information_normal(double mean1, double std_dev1, double mean2, do
 double mutual_information_normal(std::vector<Point> & data, int min_pop = 50)
 {
     MutualInformation mi(data, min_pop);
-
     mi.setUniformCopula();
 
     return mi.mutual_information();
 
 }
 
-// Mutual information with normally distributed marginals
 double mutual_information_normal(double mean1, double std_dev1, double mean2, double std_dev2, Eigen::MatrixXd & data, int min_pop = 10)
 {
     // Real value input - quantise first

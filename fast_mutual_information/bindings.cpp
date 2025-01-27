@@ -11,7 +11,7 @@ PYBIND11_MODULE(fast_mutual_information, m) {
 
     m.def(
         "mi_normal",
-        [](double mean1, double std_dev1, double mean2, double std_dev2, Eigen::MatrixXd & data) -> double { return mutual_information(mean1, std_dev1, mean2, std_dev2, data); },
+        [](double mean1, double std_dev1, double mean2, double std_dev2, Eigen::MatrixXd & data) -> double { return mutual_information_normal(mean1, std_dev1, mean2, std_dev2, data); },
         py::arg("mean1"), py::arg("mean2"), py::arg("std_dev1"), py::arg("std_dev2"), py::arg("data"),
         "Fast mutual information computation with normally distributed marginals.\n\n"
         "Parameters:\n"

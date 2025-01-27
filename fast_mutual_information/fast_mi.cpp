@@ -28,15 +28,17 @@ void clamp_uniform_samples(std::vector<RPoint>& points) {
     }
 }
 
+void clamp_uniform_samples(Eigen::MatrixXd& data) {
+    data = data.cwiseMax(0.0).cwiseMin(1.0);
+}
+
 int main() {
 
     Eigen::VectorXd mean(2);
     mean << 30.0, 150.0;
-    // mean << 0.0, 0.0;
 
     Eigen::VectorXd variance(2);
     variance << 5.0, 15.0;
-    // variance << 1.0, 1.0;
 
     Eigen::MatrixXd corr(2, 2);
     corr <<  1.0,  -0.7,
@@ -57,25 +59,25 @@ int main() {
 
         Eigen::MatrixXd cov = correlationToCovariance(corr, variance);
 
-        int num_samples = 10000;
+        int num_samples = 100;
 
         Eigen::MatrixXd samples = sampleMultivariateNormal(mean, cov, num_samples);
 
-        // Transform the samples to a uniform distribution
         Eigen::VectorXd std_dev = variance.array().sqrt();
         Eigen::MatrixXd uniform_samples = transformToUniform(samples, mean, std_dev);
 
-        // Convert to vector of Points for the mutual information function
-        std::vector<RPoint> point_samples = convertSamplesToPoints(uniform_samples);
+        clamp_uniform_samples(uniform_samples);
 
-        clamp_uniform_samples(point_samples);
+        // // Convert to vector of Points for the mutual information function
+        // std::vector<RPoint> point_samples = convertSamplesToPoints(uniform_samples);
 
-        double mi = mutual_information(point_samples);
+        double mi = mutual_information_quantised(uniform_samples);
 
-        double analyticalMI = -0.5 * std::log(1. - std::pow(corr(0, 1), 2.));
 
-        mi_analytical_vec.push_back(analyticalMI);
-        mi_tree_vec.push_back(mi);
+        // double analyticalMI = -0.5 * std::log(1. - std::pow(corr(0, 1), 2.));
+
+        // mi_analytical_vec.push_back(analyticalMI);
+        // mi_tree_vec.push_back(mi);
 
     }
 

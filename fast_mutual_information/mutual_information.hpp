@@ -85,7 +85,7 @@ private:
 
 };
 
-double mutual_information(std::vector<RPoint> & data, int min_pop = 50)
+double mutual_information(std::vector<RPoint> & data, int min_pop = 25)
 {
     MutualInformation mi(data, min_pop);
     mi.setUniformCopula();
@@ -94,7 +94,7 @@ double mutual_information(std::vector<RPoint> & data, int min_pop = 50)
 
 }
 
-double mutual_information(Eigen::MatrixXd & data, int min_pop = 50)
+double mutual_information(Eigen::MatrixXd & data, int min_pop = 25)
 {
 
     std::vector<RPoint> point_samples = convertSamplesToPoints(data);
@@ -102,7 +102,7 @@ double mutual_information(Eigen::MatrixXd & data, int min_pop = 50)
     return mutual_information(point_samples, min_pop);
 }
 
-double mutual_information(double mean1, double std_dev1, double mean2, double std_dev2, Eigen::MatrixXd & data, int min_pop = 50)
+double mutual_information_normal(double mean1, double std_dev1, double mean2, double std_dev2, Eigen::MatrixXd & data, int min_pop = 25)
 {
 
     Eigen::VectorXd mean(2);
@@ -120,12 +120,15 @@ double mutual_information(double mean1, double std_dev1, double mean2, double st
     return mutual_information(point_samples, min_pop);
 }
 
-double mutual_information_quantised(Eigen::MatrixXd & data, int min_pop = 50)
+double mutual_information_quantised(Eigen::MatrixXd & data, int min_pop = 25)
 {
 
-    std::vector<RPoint> point_samples = convertSamplesToPoints(data);
+    std::vector<IPoint> point_samples = convertSamplesToPointsQuantised(data);
 
-    return mutual_information(point_samples, min_pop);
+    std::cout << point_samples[123].x << " " << point_samples[123].y << std::endl;
+
+    // return mutual_information(point_samples, min_pop);
+    return 1.0;
 }
 
 // // Mutual information with NB distributed marginals

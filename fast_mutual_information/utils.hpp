@@ -15,57 +15,54 @@
  * @throws std::invalid_argument If the samples matrix does not have 2 rows.
  */
 
-// Specialise on return type
+// Could template specialise, but it's probably not worth it
 
-// std::vector<IPoint> convertSamplesToPoints(
-//     const Eigen::MatrixXd& samples,
-//     const bool quantise = false,
-//     const std::string& rounding_mode = "round")
-// {
-//     // Ensure that the samples matrix has exactly 2 rows for x and y
-//     if (samples.rows() != 2) {
-//         throw std::invalid_argument("Samples matrix must have exactly 2 rows for x and y coordinates.");
-//     }
+std::vector<IPoint> convertSamplesToPointsQuantised(
+    const Eigen::MatrixXd& samples,
+    const std::string& rounding_mode = "round")
+{
+    // Ensure that the samples matrix has exactly 2 rows for x and y
+    if (samples.rows() != 2) {
+        throw std::invalid_argument("Samples matrix must have exactly 2 rows for x and y coordinates.");
+    }
 
-//     int num_samples = static_cast<int>(samples.cols());
-//     std::vector<IPoint> points;
-//     points.reserve(num_samples);
+    int num_samples = static_cast<int>(samples.cols());
+    std::vector<IPoint> points;
+    points.reserve(num_samples);
 
-//     for (int i = 0; i < num_samples; ++i) {
-//         double x_double = samples(0, i);
-//         double y_double = samples(1, i);
-//         int x_int, y_int;
+    for (int i = 0; i < num_samples; ++i) {
+        double x_double = samples(0, i);
+        double y_double = samples(1, i);
+        int x_int, y_int;
 
-//         // Convert double to int based on the rounding mode
-//         if (rounding_mode == "round") {
-//             x_int = static_cast<int>(std::round(x_double));
-//             y_int = static_cast<int>(std::round(y_double));
-//         }
-//         else if (rounding_mode == "floor") {
-//             x_int = static_cast<int>(std::floor(x_double));
-//             y_int = static_cast<int>(std::floor(y_double));
-//         }
-//         else if (rounding_mode == "ceil") {
-//             x_int = static_cast<int>(std::ceil(x_double));
-//             y_int = static_cast<int>(std::ceil(y_double));
-//         }
-//         else if (rounding_mode == "truncate") {
-//             x_int = static_cast<int>(x_double); // Truncates towards zero
-//             y_int = static_cast<int>(y_double);
-//         }
-//         else {
-//             throw std::invalid_argument("Invalid rounding_mode. Choose from 'round', 'floor', 'ceil', or 'truncate'.");
-//         }
+        // Convert double to int based on the rounding mode
+        if (rounding_mode == "round") {
+            x_int = static_cast<int>(std::round(x_double));
+            y_int = static_cast<int>(std::round(y_double));
+        }
+        else if (rounding_mode == "floor") {
+            x_int = static_cast<int>(std::floor(x_double));
+            y_int = static_cast<int>(std::floor(y_double));
+        }
+        else if (rounding_mode == "ceil") {
+            x_int = static_cast<int>(std::ceil(x_double));
+            y_int = static_cast<int>(std::ceil(y_double));
+        }
+        else if (rounding_mode == "truncate") {
+            x_int = static_cast<int>(x_double); // Truncates towards zero
+            y_int = static_cast<int>(y_double);
+        }
+        else {
+            throw std::invalid_argument("Invalid rounding_mode. Choose from 'round', 'floor', 'ceil', or 'truncate'.");
+        }
 
-//         // Create a Point and add to the vector
-//         points.emplace_back(IPoint{ x_int, y_int });
+        // Create a Point and add to the vector
+        points.emplace_back(IPoint{ x_int, y_int });
 
-//         // Create a Point and add to the vector
-//         points.emplace_back(IPoint{ x_double, y_double });
-//     }
+    }
 
-//     return points;
-// }
+    return points;
+}
 
 std::vector<RPoint> convertSamplesToPoints(const Eigen::MatrixXd& samples)
 {

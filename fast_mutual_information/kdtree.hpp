@@ -25,16 +25,12 @@ struct IPoint {
     int y;
 };
 
-// kd-tree node
 struct KDNode {
-    // Bounding box for the node (useful for range queries)
     double min_x, max_x;
     double min_y, max_y;
 
-    // If leaf node, store points and their counts
     std::vector<std::pair<RPoint, int>> points; // Pair of RPoint and count
 
-    // If internal node, store the splitting dimension and splitting value
     bool is_leaf;
     int split_dim; // 0 for x, 1 for y
     double split_val;
@@ -45,8 +41,6 @@ struct KDNode {
     KDNode() : is_leaf(false), split_dim(0), split_val(0),
                min_x(1E8), max_x(-1E8),
                min_y(1E8), max_y(-1E8) {}
-               // min_x(1.0), max_x(0.0),
-               // min_y(1.0), max_y(0.0) {}
 
     double get_bin_area() const {
         double width = this->max_x - this->min_x;
@@ -56,7 +50,6 @@ struct KDNode {
 
 };
 
-// kd-tree class
 class KDTree {
 public:
 
@@ -65,19 +58,9 @@ public:
     KDTree(const std::vector<RPoint>& points, Copula * copula, int max_points_per_leaf = 10)
         : max_points(max_points_per_leaf), copula(copula) {
 
-        // total_count = points.size(); // Or # leaves?
-
         long long sum_points = 0;
         for (auto &p : points) sum_points += 1; // or if using duplicates, sum up p.second
         total_count = sum_points;
-
-        // Preprocess points to count duplicates
-
-        // For ints!
-
-        // std::vector<std::pair<RPoint, int>> unique_points = count_duplicates_unordered_map(points);
-
-        // std::cout << "Getting points" << std::endl;
 
         std::vector<std::pair<RPoint, int>> unique_points;
 
@@ -85,16 +68,7 @@ public:
             unique_points.push_back(std::make_pair(points[i], 1));
         }
 
-        // for (auto p : unique_points) {
-        //     std::cout << p.first.x << " " << p.first.y << " " << p.second << std::endl;
-        // }
-
-        // std::cout << "Building" << std::endl;
-
-        // root = build(unique_points, 0);
         root = build(unique_points, 0, 0.0, 1.0, 0.0, 1.0);
-        // build(unique_points, 0, 0.0, 1.0, 0.0, 1.0);
-        // total_count = compute_total_count(root.get());
     }
 
     // Function to compute mutual information
@@ -166,19 +140,16 @@ private:
     }
 
     std::vector<std::pair<RPoint, int>> count_duplicates_absl(const std::vector<RPoint>& points) {
-        // Define the flat_hash_map with pair<int, int> as key
+
         absl::flat_hash_map<std::pair<double, double>, int, absl::Hash<std::pair<double, double>>> point_map;
 
-        // Reserve space to minimize rehashing (optional but recommended)
-        point_map.reserve(points.size() / 2); // Adjust based on expected uniqueness
+        point_map.reserve(points.size() / 2);
 
-        // Count occurrences
         for (const auto& pt : points) {
             std::pair<int, int> key = {pt.x, pt.y};
             point_map[key]++;
         }
 
-        // Convert the map to a vector of unique points with counts
         std::vector<std::pair<RPoint, int>> unique_points;
         unique_points.reserve(point_map.size());
 

@@ -76,8 +76,6 @@ public:
 
     KDTree() {}
 
-    // Add version with duplicates - template specialise on ints
-
     KDTree(const std::vector<Point<T>>& points, Copula * copula, int max_points_per_leaf = 10);
 
     double get_correction() const {
@@ -96,6 +94,8 @@ public:
         double area = 0.0;
 
         traverse_and_compute(root.get(), mi, area);
+
+        std::cout << area << std::endl;
 
         return mi;
     }
@@ -146,8 +146,8 @@ private:
 
     std::unique_ptr<KDNode<T>> build(std::vector<std::pair<Point<T>, int>>& points,
                                   int depth,
-                                  double min_x, double max_x,
-                                  double min_y, double max_y) {
+                                  T min_x, T max_x,
+                                  T min_y, T max_y) {
 
         auto node = std::make_unique<KDNode<T>>();
         node->min_x = min_x;
@@ -155,7 +155,9 @@ private:
         node->min_y = min_y;
         node->max_y = max_y;
 
-        if (points.size() <= static_cast<size_t>(max_points)) {
+        bool degenerate_split = (max_x - min_x < 1E-8) || (max_y - min_y < 1E-8);
+
+        if (points.size() <= static_cast<size_t>(max_points) || degenerate_split) {
             node->is_leaf = true;
             node->points = points;
             return node;
@@ -178,7 +180,7 @@ private:
 
 
         size_t median_idx = points.size() / 2;
-        double median_val = (axis == 0) ? points[median_idx].first.x
+        T median_val = (axis == 0) ? points[median_idx].first.x
                                         : points[median_idx].first.y;
         node->split_val = median_val;
 
@@ -186,7 +188,7 @@ private:
         std::vector<std::pair<Point<T>, int>> right_points;
 
         for (const auto& p : points) {
-            double coord = (axis == 0) ? p.first.x : p.first.y;
+            int coord = (axis == 0) ? p.first.x : p.first.y;
             if (coord < median_val) {
                 left_points.emplace_back(p);
             } else if (coord > median_val) {
@@ -203,10 +205,15 @@ private:
         // Handle potential empty subsets by enforcing the bounding box split
 
         if (!left_points.empty()) {
+            // if (left_points.size() == 1) {
+            //     std::cout << "Left size 1\n";
+            // }
+            // std::cout << "left size " << left_points.size() << std::endl;
             node->left = build(left_points, depth + 1,
                                min_x, (axis == 0 ? median_val : max_x),
                                min_y, (axis == 1 ? median_val : max_y));
         } else {
+            // std::cout << "Left empty\n";
             auto leaf = std::make_unique<KDNode<T>>();
             leaf->is_leaf = true;
             leaf->min_x = min_x;
@@ -217,10 +224,15 @@ private:
         }
 
         if (!right_points.empty()) {
+            // if (left_points.size() == 1) {
+                // std::cout << "Right size 1\n";
+            // }
+            // std::cout << "right size " << right_points.size() << std::endl;
             node->right = build(right_points, depth + 1,
                                 (axis == 0 ? median_val : min_x), max_x,
                                 (axis == 1 ? median_val : min_y), max_y);
         } else {
+            // std::cout << "Right empty\n";
             auto leaf = std::make_unique<KDNode<T>>();
             leaf->is_leaf = true;
             leaf->min_x = (axis == 0 ? median_val : min_x);
@@ -229,6 +241,34 @@ private:
             leaf->max_y = max_y;
             node->right = std::move(leaf);
         }
+
+        // degenerate_split = (node->max_x - node->min_x < 1E-8) || (node->max_y - node->min_y < 1E-8);
+
+        // bool degenerate_left = (node->left) && ( (node->max_x - node->min_x < 1E-8) || (node->max_y - node->min_y < 1E-8));
+
+        // bool degenerate_right = (node->right) && ( (node->max_x - node->min_x < 1E-8) || (node->max_y - node->min_y < 1E-8));
+
+        // if (degenerate_split) std:: cout << "DEGENERACY" << std::endl;
+        // if (degenerate_left) std:: cout << "DEGENERACY L" << std::endl;
+        // if (degenerate_right) std:: cout << "DEGENERACY R" << std::endl;
+
+        // std::cout << "THIS " << node->min_x << " " << node->max_x << " " << node->min_y << " " << node->max_y << std::endl;
+
+        // if (node->left) {
+        //     std::cout << "LEFT " << node->left->min_x << " " << node->left->max_x << " " << node->left->min_y << " " << node->left->max_y << std::endl;
+        //     if (node->left->min_y == node->left->max_y) {
+        //         std::cout << node->left->points.size() << std::endl;
+        //         std::cout << std::endl;
+        //         for (auto p : node->left->points) {
+        //             std::cout << p.second << " " << p.first.x << " " << p.first.y << std::endl;
+        //         }
+        //         // exit(0);
+        //     }
+        // }
+
+        // if (node->right) {
+        //     std::cout << "RIGHT " << node->right->min_x << " " << node->right->max_x << " " << node->right->min_y << " " << node->right->max_y << std::endl;
+        // }
 
         return node;
     }
@@ -257,6 +297,8 @@ private:
             double bin_area = this->get_bin_area(*node);
 
             double p_xy = calculate_p_xy(bin_count, bin_area);
+
+            // std::cout << bin_count << " " << bin_area << " " << p_xy << std::endl;
 
             if (p_xy > 0) {
                 mi += p_xy * std::log(p_xy) * bin_area;
@@ -297,15 +339,9 @@ KDTree<int>::KDTree(const std::vector<Point<int>>& points, Copula * copula, int 
 
     std::vector<std::pair<Point<int>, int>> unique_points = count_duplicates_absl(points);
 
-    for (auto p : unique_points) {
-        std::cout << p.first.x << " " << p.first.y << " " << p.second << std::endl;
-    }
-
     // These are the boundaries of the input data that then get mapped to [0, 1, 0, 1] when transformed via the CDF
 
     auto [min_x, max_x, min_y, max_y] = get_bounds(points);
-
-    std::cout << min_x << " " << max_x << " " << min_y << " " << max_y << std::endl;
 
     root = build(unique_points, 0, min_x, max_x, min_y, max_y);
 }
@@ -321,11 +357,15 @@ double KDTree<int>::get_bin_area(const KDNode<int> & node) const {
     // Transform to the uniform distribution via the CDF, to get
     // the area in U[0, 1] space
 
-    int x_min = this->copula->cdf_x(node.min_x);
-    int x_max = this->copula->cdf_x(node.max_x);
+    double x_min = this->copula->cdf_x(node.min_x);
+    double x_max = this->copula->cdf_x(node.max_x);
 
-    int y_min = this->copula->cdf_y(node.min_y);
-    int y_max = this->copula->cdf_y(node.max_y);
+    double y_min = this->copula->cdf_y(node.min_y);
+    double y_max = this->copula->cdf_y(node.max_y);
+
+    // std::cout << node.min_x << " " << node.max_x << " " << node.min_y << " " << node.max_y << std::endl;
+    // std::cout << x_min << " " << x_max << " " << y_min << " " << y_max << std::endl;
+    // std::cout << std::endl;
 
     double width = x_max - x_min;
     double height = x_max - x_min;

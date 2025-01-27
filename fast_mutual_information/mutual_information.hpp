@@ -97,6 +97,17 @@ double mutual_information(std::vector<Point<T>> & data, int min_pop = 25)
 
 }
 
+// Pass normal parameters so the CDF can be calculated on the fly
+template <typename T>
+double mutual_information(double mean1, double std_dev1, double mean2, double std_dev2, std::vector<Point<T>> & data, int min_pop = 10)
+{
+    MutualInformation<T> mi(data, min_pop);
+    mi.setNormalCDF(mean1, std_dev1, mean2, std_dev2);
+
+    return mi.mutual_information();
+
+}
+
 double mutual_information(Eigen::MatrixXd & data, int min_pop = 25)
 {
 
@@ -123,12 +134,12 @@ double mutual_information_normal(double mean1, double std_dev1, double mean2, do
     return mutual_information(point_samples, min_pop);
 }
 
-double mutual_information_quantised(Eigen::MatrixXd & data, int min_pop = 25)
+double mutual_information_quantised(double mean1, double std_dev1, double mean2, double std_dev2, Eigen::MatrixXd & data, int min_pop = 25)
 {
 
     std::vector<Point<int>> point_samples = convertSamplesToPointsQuantised(data);
 
-    return mutual_information(point_samples, min_pop);
+    return mutual_information(mean1, std_dev1, mean2, std_dev2, point_samples, min_pop);
 }
 
 // // Mutual information with NB distributed marginals

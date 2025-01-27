@@ -25,10 +25,10 @@
 int main() {
 
     Eigen::VectorXd mean(2);
-    mean << 30.0, 150.0;
+    mean << 40.0, 150.0;
 
     Eigen::VectorXd variance(2);
-    variance << 10.0, 25.0;
+    variance << 30.0, 50.0;
 
     Eigen::MatrixXd corr(2, 2);
     corr <<  1.0,  -0.7,
@@ -49,19 +49,21 @@ int main() {
 
         Eigen::MatrixXd cov = correlationToCovariance(corr, variance);
 
-        int num_samples = 100;
+        int num_samples = 1000;
 
         Eigen::MatrixXd samples = sampleMultivariateNormal(mean, cov, num_samples);
 
         Eigen::VectorXd std_dev = variance.array().sqrt();
         // Eigen::MatrixXd uniform_samples = transformToUniform(samples, mean, std_dev);
 
-        double mi = mutual_information_quantised(samples);
+        double mi = mutual_information_quantised(mean(0), std_dev(0), mean(1), std_dev(1), samples);
 
         double analyticalMI = -0.5 * std::log(1. - std::pow(corr(0, 1), 2.));
 
         mi_analytical_vec.push_back(analyticalMI);
         mi_tree_vec.push_back(mi);
+
+        // exit(0);
 
     }
 

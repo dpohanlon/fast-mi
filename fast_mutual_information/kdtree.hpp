@@ -40,23 +40,19 @@ struct KDNode {
                min_x(1E8), max_x(-1E8),
                min_y(1E8), max_y(-1E8) {}
 
-    double get_bin_area(void) const;
+    T get_width(void) const {
+        return max_x - min_x;
+    }
+
+    T get_height(void) const {
+        return max_y - min_y;
+    }
+
+    double get_bin_area(void) const {
+        return this->get_width() * this->get_height();
+    }
 
 };
-
-template <typename T>
-double KDNode<T>::get_bin_area() const {
-    double width = this->max_x - this->min_x;
-    double height = this->max_y - this->min_y;
-    return width * height;
-}
-
-template <>
-double KDNode<int>::get_bin_area() const {
-    double width = this->max_x - this->min_x;
-    double height = this->max_y - this->min_y;
-    return width * height;
-}
 
 template <typename T>
 class KDTree {
@@ -118,6 +114,8 @@ private:
     long long total_count;
 
     Copula * copula;
+
+    double get_bin_area(const KDNode<T> & node) const;
 
     std::vector<std::pair<Point<T>, int>> count_duplicates_absl(const std::vector<Point<T>>& points) {
 
@@ -260,7 +258,7 @@ private:
 
             int bin_count = node->points.size();
 
-            double bin_area = node->get_bin_area();
+            double bin_area = this->get_bin_area(*node);
 
             double p_xy = calculate_p_xy(bin_count, bin_area);
 
@@ -280,3 +278,26 @@ private:
         traverse_and_compute(node->right.get(), mi, area);
     }
 };
+
+template <typename T>
+double KDTree<T>::get_bin_area(const KDNode<T> & node) const {
+    return node.get_bin_area();
+}
+
+template <>
+double KDTree<int>::get_bin_area(const KDNode<int> & node) const {
+
+    // Transform to the uniform distribution via the CDF, to get
+    // the area in U[0, 1] space
+
+    int x_min = this->copula->cdf_x(node.min_x);
+    int x_max = this->copula->cdf_x(node.max_x);
+
+    int y_min = this->copula->cdf_y(node.min_y);
+    int y_max = this->copula->cdf_y(node.max_y);
+
+    double width = x_max - x_min;
+    double height = x_max - x_min;
+
+    return width * height;
+}

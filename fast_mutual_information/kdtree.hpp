@@ -29,7 +29,7 @@ struct KDNode {
     double min_x, max_x;
     double min_y, max_y;
 
-    std::vector<std::pair<RPoint, int>> points; // Pair of RPoint and count
+    std::vector<std::pair<RPoint, int>> points;
 
     bool is_leaf;
     int split_dim; // 0 for x, 1 for y
@@ -74,9 +74,9 @@ public:
     // Function to compute mutual information
     double compute_mutual_information() const {
         double mi = 0.0;
-        double pxy = 0.0;
+        double area = 0.0;
 
-        traverse_and_compute(root.get(), mi, pxy);
+        traverse_and_compute(root.get(), mi, area);
 
         int depth = get_tree_depth();
 
@@ -110,35 +110,6 @@ private:
 
     Copula * copula;
 
-    std::vector<std::pair<RPoint, int>> count_duplicates(const std::vector<RPoint>& points) {
-        std::vector<RPoint> sorted_points = points;
-        std::sort(sorted_points.begin(), sorted_points.end(),
-                  [](const RPoint& a, const RPoint& b) -> bool {
-                      if (a.x != b.x)
-                          return a.x < b.x;
-                      return a.y < b.y;
-                  });
-
-        std::vector<std::pair<RPoint, int>> unique_points;
-        if (sorted_points.empty()) return unique_points;
-
-        RPoint current = sorted_points[0];
-        int count = 1;
-
-        #pragma omp simd
-        for (size_t i = 1; i < sorted_points.size(); ++i) {
-            if (sorted_points[i].x == current.x && sorted_points[i].y == current.y) {
-                count++;
-            } else {
-                unique_points.emplace_back(std::make_pair(current, count));
-                current = sorted_points[i];
-                count = 1;
-            }
-        }
-        unique_points.emplace_back(std::make_pair(current, count));
-        return unique_points;
-    }
-
     std::vector<std::pair<RPoint, int>> count_duplicates_absl(const std::vector<RPoint>& points) {
 
         absl::flat_hash_map<std::pair<double, double>, int, absl::Hash<std::pair<double, double>>> point_map;
@@ -165,27 +136,6 @@ private:
             return std::hash<double>()(p.first) ^ (std::hash<double>()(p.second) << 1);
         }
     };
-
-    std::vector<std::pair<RPoint, int>> count_duplicates_unordered_map(const std::vector<RPoint>& points) {
-
-        std::unordered_map<std::pair<double, double>, int, pair_hash> point_map;
-
-        point_map.reserve(points.size() / 2);
-
-        for (const auto& pt : points) {
-            std::pair<int, int> key = {pt.x, pt.y};
-            point_map[key]++;
-        }
-
-        std::vector<std::pair<RPoint, int>> unique_points;
-        unique_points.reserve(point_map.size());
-
-        for (const auto& entry : point_map) {
-            unique_points.emplace_back(std::make_pair(RPoint{entry.first.first, entry.first.second}, entry.second));
-        }
-
-        return unique_points;
-    }
 
     std::unique_ptr<KDNode> build(std::vector<std::pair<RPoint, int>>& points,
                                   int depth,
@@ -294,7 +244,7 @@ private:
         return static_cast<double>(count) / (static_cast<double>(total_count) * bin_area);
     }
 
-    void traverse_and_compute(const KDNode* node, double& mi, double &pxy) const {
+    void traverse_and_compute(const KDNode* node, double& mi, double &area) const {
         if (!node) return;
 
         if (node->is_leaf) {
@@ -312,12 +262,12 @@ private:
                 mi += p_xy * std::log(p_xy) * bin_area;
             }
 
-            pxy += bin_area;
+            area += bin_area;
 
             return;
         }
 
-        traverse_and_compute(node->left.get(), mi, pxy);
-        traverse_and_compute(node->right.get(), mi, pxy);
+        traverse_and_compute(node->left.get(), mi, area);
+        traverse_and_compute(node->right.get(), mi, area);
     }
 };

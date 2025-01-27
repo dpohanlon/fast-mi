@@ -15,21 +15,21 @@
 
 #include "copula.hpp"
 
-struct RPoint {
-    double x;
-    double y;
+// Would a template here be overkill?
+
+template <typename T>
+struct Point {
+    T x;
+    T y;
 };
 
-struct IPoint {
-    int x;
-    int y;
-};
-
+template <typename T>
 struct KDNode {
-    double min_x, max_x;
-    double min_y, max_y;
 
-    std::vector<std::pair<RPoint, int>> points;
+    T min_x, max_x;
+    T min_y, max_y;
+
+    std::vector<std::pair<Point<T>, int>> points;
 
     bool is_leaf;
     int split_dim; // 0 for x, 1 for y
@@ -50,19 +50,20 @@ struct KDNode {
 
 };
 
+template <typename T>
 class KDTree {
 public:
 
     KDTree() {}
 
-    KDTree(const std::vector<RPoint>& points, Copula * copula, int max_points_per_leaf = 10)
+    KDTree(const std::vector<Point<T>>& points, Copula * copula, int max_points_per_leaf = 10)
         : max_points(max_points_per_leaf), copula(copula) {
 
         long long sum_points = 0;
         for (auto &p : points) sum_points += 1; // or if using duplicates, sum up p.second
         total_count = sum_points;
 
-        std::vector<std::pair<RPoint, int>> unique_points;
+        std::vector<std::pair<Point<T>, int>> unique_points;
 
         for (int i = 0; i < points.size(); i++) {
             unique_points.push_back(std::make_pair(points[i], 1));
@@ -78,18 +79,18 @@ public:
 
         traverse_and_compute(root.get(), mi, area);
 
-        int depth = get_tree_depth();
+        // int depth = get_tree_depth();
 
-        int bins_xy = std::pow(2, depth);
-        int bins_x = std::pow(2, depth / 2);
-        int bins_y = std::pow(2, depth / 2);
+        // int bins_xy = std::pow(2, depth);
+        // int bins_x = std::pow(2, depth / 2);
+        // int bins_y = std::pow(2, depth / 2);
 
-        double correction = (bins_xy - 1) / (2. * total_count);
+        // double correction = (bins_xy - 1) / (2. * total_count);
 
         return mi;
     }
 
-    int calculate_depth(const KDNode* node) const {
+    int calculate_depth(const KDNode<T>* node) const {
         if (!node) return 0;
         if (node->is_leaf) return 1;
 
@@ -104,13 +105,13 @@ public:
     }
 
 private:
-    std::unique_ptr<KDNode> root;
+    std::unique_ptr<KDNode<T>> root;
     int max_points;
     long long total_count;
 
     Copula * copula;
 
-    std::vector<std::pair<RPoint, int>> count_duplicates_absl(const std::vector<RPoint>& points) {
+    std::vector<std::pair<Point<T>, int>> count_duplicates_absl(const std::vector<Point<T>>& points) {
 
         absl::flat_hash_map<std::pair<double, double>, int, absl::Hash<std::pair<double, double>>> point_map;
 
@@ -121,11 +122,11 @@ private:
             point_map[key]++;
         }
 
-        std::vector<std::pair<RPoint, int>> unique_points;
+        std::vector<std::pair<Point<T>, int>> unique_points;
         unique_points.reserve(point_map.size());
 
         for (const auto& entry : point_map) {
-            unique_points.emplace_back(std::make_pair(RPoint{entry.first.first, entry.first.second}, entry.second));
+            unique_points.emplace_back(std::make_pair(Point<T>{entry.first.first, entry.first.second}, entry.second));
         }
 
         return unique_points;
@@ -137,12 +138,12 @@ private:
         }
     };
 
-    std::unique_ptr<KDNode> build(std::vector<std::pair<RPoint, int>>& points,
+    std::unique_ptr<KDNode<T>> build(std::vector<std::pair<Point<T>, int>>& points,
                                   int depth,
                                   double min_x, double max_x,
                                   double min_y, double max_y) {
 
-        auto node = std::make_unique<KDNode>();
+        auto node = std::make_unique<KDNode<T>>();
         node->min_x = min_x;
         node->max_x = max_x;
         node->min_y = min_y;
@@ -159,12 +160,12 @@ private:
 
         if (axis == 0) {
             std::sort(points.begin(), points.end(),
-                      [](const std::pair<RPoint, int>& a, const std::pair<RPoint, int>& b) -> bool {
+                      [](const std::pair<Point<T>, int>& a, const std::pair<Point<T>, int>& b) -> bool {
                           return a.first.x < b.first.x;
                       });
         } else {
             std::sort(points.begin(), points.end(),
-                      [](const std::pair<RPoint, int>& a, const std::pair<RPoint, int>& b) -> bool {
+                      [](const std::pair<Point<T>, int>& a, const std::pair<Point<T>, int>& b) -> bool {
                           return a.first.y < b.first.y;
                       });
         }
@@ -175,8 +176,8 @@ private:
                                         : points[median_idx].first.y;
         node->split_val = median_val;
 
-        std::vector<std::pair<RPoint, int>> left_points;
-        std::vector<std::pair<RPoint, int>> right_points;
+        std::vector<std::pair<Point<T>, int>> left_points;
+        std::vector<std::pair<Point<T>, int>> right_points;
 
         for (const auto& p : points) {
             double coord = (axis == 0) ? p.first.x : p.first.y;
@@ -200,7 +201,7 @@ private:
                                min_x, (axis == 0 ? median_val : max_x),
                                min_y, (axis == 1 ? median_val : max_y));
         } else {
-            auto leaf = std::make_unique<KDNode>();
+            auto leaf = std::make_unique<KDNode<T>>();
             leaf->is_leaf = true;
             leaf->min_x = min_x;
             leaf->max_x = (axis == 0 ? median_val : max_x);
@@ -214,7 +215,7 @@ private:
                                 (axis == 0 ? median_val : min_x), max_x,
                                 (axis == 1 ? median_val : min_y), max_y);
         } else {
-            auto leaf = std::make_unique<KDNode>();
+            auto leaf = std::make_unique<KDNode<T>>();
             leaf->is_leaf = true;
             leaf->min_x = (axis == 0 ? median_val : min_x);
             leaf->max_x = max_x;
@@ -226,7 +227,7 @@ private:
         return node;
     }
 
-    long long compute_total_count(const KDNode* node) const {
+    long long compute_total_count(const KDNode<T>* node) const {
         if (!node) return 0;
         if (node->is_leaf) {
             return 1;
@@ -244,7 +245,7 @@ private:
         return static_cast<double>(count) / (static_cast<double>(total_count) * bin_area);
     }
 
-    void traverse_and_compute(const KDNode* node, double& mi, double &area) const {
+    void traverse_and_compute(const KDNode<T>* node, double& mi, double &area) const {
         if (!node) return;
 
         if (node->is_leaf) {

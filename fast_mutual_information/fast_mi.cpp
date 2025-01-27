@@ -20,18 +20,6 @@
 #include "utils.hpp"
 #include "mutual_information.hpp"
 
-void clamp_uniform_samples(std::vector<RPoint>& points) {
-    constexpr double CLAMP_EPS = 1e-12;
-    for (auto &pt : points) {
-        pt.x = std::clamp(pt.x, CLAMP_EPS, 1.0 - CLAMP_EPS);
-        pt.y = std::clamp(pt.y, CLAMP_EPS, 1.0 - CLAMP_EPS);
-    }
-}
-
-void clamp_uniform_samples(Eigen::MatrixXd& data) {
-    data = data.cwiseMax(0.0).cwiseMin(1.0);
-}
-
 int main() {
 
     Eigen::VectorXd mean(2);

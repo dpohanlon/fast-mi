@@ -12,6 +12,7 @@
 // Set up with a class, configure, then run MI calculation
 // TODO: Take Eigen vectors of means and variances
 
+template <typename T>
 class MutualInformation {
 public:
 
@@ -23,7 +24,7 @@ public:
         delete this->copula;
     }
 
-    MutualInformation(std::vector<RPoint> & data, int min_pop = 10) {
+    MutualInformation(std::vector<Point<T>> & data, int min_pop = 10) {
 
         this->copula = new Copula();
         this->setData(data, min_pop);
@@ -48,9 +49,9 @@ public:
         this->copula->icdf_y = [](double v) -> double { return v; };
     }
 
-    void setData(std::vector<RPoint> & data, int min_pop = 10)
+    void setData(std::vector<Point<T>> & data, int min_pop = 10)
     {
-        this->tree = KDTree(data, this->copula, min_pop);
+        this->tree = KDTree<T>(data, this->copula, min_pop);
     }
 
     void setNormalPMF(double mean1, double std_dev1, double mean2, double std_dev2)
@@ -65,7 +66,7 @@ public:
         this->copula->cdf_y = [=](double y) -> double { return normal_cdf(y, mean2, std_dev2); };
     }
 
-    void setNormalICDF( double mean1, double std_dev1, double mean2, double std_dev2)
+    void setNormalICDF(double mean1, double std_dev1, double mean2, double std_dev2)
     {
         this->copula->icdf_x = [=](double x) -> double { return normal_icdf(x, mean1, std_dev1); };
         this->copula->icdf_y = [=](double y) -> double { return normal_icdf(y, mean2, std_dev2); };
@@ -80,24 +81,26 @@ public:
     }
 
 private:
-    KDTree tree;
+    KDTree<T> tree;
     Copula * copula;
 
 };
 
-double mutual_information(std::vector<RPoint> & data, int min_pop = 25)
+template <typename T>
+double mutual_information(std::vector<Point<T>> & data, int min_pop = 25)
 {
-    MutualInformation mi(data, min_pop);
+    MutualInformation<double> mi(data, min_pop);
     mi.setUniformCopula();
 
     return mi.mutual_information();
 
 }
 
+
 double mutual_information(Eigen::MatrixXd & data, int min_pop = 25)
 {
 
-    std::vector<RPoint> point_samples = convertSamplesToPoints(data);
+    std::vector<Point<double>> point_samples = convertSamplesToPoints(data);
 
     return mutual_information(point_samples, min_pop);
 }
@@ -115,7 +118,7 @@ double mutual_information_normal(double mean1, double std_dev1, double mean2, do
 
     Eigen::MatrixXd uniform_samples = transformToUniform(data, mean, std_dev);
 
-    std::vector<RPoint> point_samples = convertSamplesToPoints(uniform_samples);
+    std::vector<Point<double>> point_samples = convertSamplesToPoints(uniform_samples);
 
     return mutual_information(point_samples, min_pop);
 }
@@ -123,7 +126,7 @@ double mutual_information_normal(double mean1, double std_dev1, double mean2, do
 double mutual_information_quantised(Eigen::MatrixXd & data, int min_pop = 25)
 {
 
-    std::vector<IPoint> point_samples = convertSamplesToPointsQuantised(data);
+    std::vector<Point<int>> point_samples = convertSamplesToPointsQuantised(data);
 
     std::cout << point_samples[123].x << " " << point_samples[123].y << std::endl;
 
@@ -132,7 +135,7 @@ double mutual_information_quantised(Eigen::MatrixXd & data, int min_pop = 25)
 }
 
 // // Mutual information with NB distributed marginals
-// double mutual_information_nb(double mean1, double conc1, double mean2, double conc2, std::vector<RPoint> & data, int min_pop = 10)
+// double mutual_information_nb(double mean1, double conc1, double mean2, double conc2, std::vector<Point> & data, int min_pop = 10)
 // {
 //     auto p_x_func = [&](int x) -> double {
 //         return nb2_base(x, mean1, conc1);
@@ -152,7 +155,7 @@ double mutual_information_quantised(Eigen::MatrixXd & data, int min_pop = 25)
 // {
 //     // Real value input - quantise first
 
-//     std::vector<RPoint> RPoint_samples = convertSamplesToRPoints(data);
+//     std::vector<Point> Point_samples = convertSamplesToPoints(data);
 
-//     return mutual_information_nb(mean1, conc1, mean2, conc2, RPoint_samples, min_pop);
+//     return mutual_information_nb(mean1, conc1, mean2, conc2, Point_samples, min_pop);
 // }

@@ -17,7 +17,7 @@
 
 // Could template specialise, but it's probably not worth it
 
-std::vector<IPoint> convertSamplesToPointsQuantised(
+std::vector<Point<int>> convertSamplesToPointsQuantised(
     const Eigen::MatrixXd& samples,
     const std::string& rounding_mode = "round")
 {
@@ -27,7 +27,7 @@ std::vector<IPoint> convertSamplesToPointsQuantised(
     }
 
     int num_samples = static_cast<int>(samples.cols());
-    std::vector<IPoint> points;
+    std::vector<Point<int>> points;
     points.reserve(num_samples);
 
     for (int i = 0; i < num_samples; ++i) {
@@ -57,14 +57,14 @@ std::vector<IPoint> convertSamplesToPointsQuantised(
         }
 
         // Create a Point and add to the vector
-        points.emplace_back(IPoint{ x_int, y_int });
+        points.emplace_back(Point<int>{ x_int, y_int });
 
     }
 
     return points;
 }
 
-std::vector<RPoint> convertSamplesToPoints(const Eigen::MatrixXd& samples)
+std::vector<Point<double>> convertSamplesToPoints(const Eigen::MatrixXd& samples)
 {
     // Ensure that the samples matrix has exactly 2 rows for x and y
     if (samples.rows() != 2) {
@@ -72,14 +72,14 @@ std::vector<RPoint> convertSamplesToPoints(const Eigen::MatrixXd& samples)
     }
 
     int num_samples = static_cast<int>(samples.cols());
-    std::vector<RPoint> points;
+    std::vector<Point<double>> points;
     points.reserve(num_samples);
 
     for (int i = 0; i < num_samples; ++i) {
         double x = samples(0, i);
         double y = samples(1, i);
 
-        points.emplace_back(RPoint{ x, y });
+        points.emplace_back(Point<double>{ x, y });
     }
 
     return points;
@@ -96,4 +96,16 @@ Eigen::MatrixXd transformToUniform(const Eigen::MatrixXd& samples, const Eigen::
     }
 
     return uniform_samples;
+}
+
+void clamp_uniform_samples(std::vector<Point<double>>& points) {
+    constexpr double CLAMP_EPS = 1e-12;
+    for (auto &pt : points) {
+        pt.x = std::clamp(pt.x, CLAMP_EPS, 1.0 - CLAMP_EPS);
+        pt.y = std::clamp(pt.y, CLAMP_EPS, 1.0 - CLAMP_EPS);
+    }
+}
+
+void clamp_uniform_samples(Eigen::MatrixXd& data) {
+    data = data.cwiseMax(0.0).cwiseMin(1.0);
 }

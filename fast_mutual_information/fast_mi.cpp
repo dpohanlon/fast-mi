@@ -49,7 +49,7 @@ int main() {
 
         Eigen::MatrixXd cov = correlationToCovariance(corr, variance);
 
-        int num_samples = 100000;
+        int num_samples = 1000000;
 
         Eigen::MatrixXd samples = sampleMultivariateNormal(mean, cov, num_samples);
 
@@ -62,8 +62,6 @@ int main() {
 
         mi_analytical_vec.push_back(analyticalMI);
         mi_tree_vec.push_back(mi);
-
-        // exit(0);
 
     }
 

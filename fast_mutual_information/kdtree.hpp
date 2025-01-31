@@ -95,8 +95,6 @@ public:
 
         traverse_and_compute(root.get(), mi, area);
 
-        // std::cout << area << std::endl;
-
         return mi;
     }
 
@@ -122,6 +120,8 @@ private:
     Copula * copula;
 
     double get_bin_area(const KDNode<T> & node) const;
+
+    // For ints this can be optimised by sorting!
 
     std::vector<std::pair<Point<int>, int>> count_duplicates_absl(const std::vector<Point<int>>& points) {
 
@@ -205,17 +205,11 @@ private:
 
         // Handle potential empty subsets by enforcing the bounding box split
 
-        // if (!left_points.empty()) {
          if (!left_points.empty()) {
-            // if (left_points.size() == 1) {
-            //     std::cout << "Left size 1\n";
-            // }
-            // std::cout << "left size " << left_points.size() << std::endl;
             node->left = build(left_points, depth + 1,
                                min_x, (axis == 0 ? median_val : max_x),
                                min_y, (axis == 1 ? median_val : max_y));
         } else {
-            std::cout << "Left empty\n";
             auto leaf = std::make_unique<KDNode<T>>();
             leaf->is_leaf = true;
             leaf->min_x = min_x;
@@ -226,15 +220,10 @@ private:
         }
 
         if (!right_points.empty()) {
-            // if (left_points.size() == 1) {
-                // std::cout << "Right size 1\n";
-            // }
-            // std::cout << "right size " << right_points.size() << std::endl;
             node->right = build(right_points, depth + 1,
                                 (axis == 0 ? median_val : min_x), max_x,
                                 (axis == 1 ? median_val : min_y), max_y);
         } else {
-            std::cout << "Right empty\n";
             auto leaf = std::make_unique<KDNode<T>>();
             leaf->is_leaf = true;
             leaf->min_x = (axis == 0 ? median_val : min_x);
@@ -243,34 +232,6 @@ private:
             leaf->max_y = max_y;
             node->right = std::move(leaf);
         }
-
-        // degenerate_split = (node->max_x - node->min_x < 1E-8) || (node->max_y - node->min_y < 1E-8);
-
-        // bool degenerate_left = (node->left) && ( (node->max_x - node->min_x < 1E-8) || (node->max_y - node->min_y < 1E-8));
-
-        // bool degenerate_right = (node->right) && ( (node->max_x - node->min_x < 1E-8) || (node->max_y - node->min_y < 1E-8));
-
-        // if (degenerate_split) std:: cout << "DEGENERACY" << std::endl;
-        // if (degenerate_left) std:: cout << "DEGENERACY L" << std::endl;
-        // if (degenerate_right) std:: cout << "DEGENERACY R" << std::endl;
-
-        // std::cout << "THIS " << node->min_x << " " << node->max_x << " " << node->min_y << " " << node->max_y << std::endl;
-
-        // if (node->left) {
-        //     std::cout << "LEFT " << node->left->min_x << " " << node->left->max_x << " " << node->left->min_y << " " << node->left->max_y << std::endl;
-        //     if (node->left->min_y == node->left->max_y) {
-        //         std::cout << node->left->points.size() << std::endl;
-        //         std::cout << std::endl;
-        //         for (auto p : node->left->points) {
-        //             std::cout << p.second << " " << p.first.x << " " << p.first.y << std::endl;
-        //         }
-        //         // exit(0);
-        //     }
-        // }
-
-        // if (node->right) {
-        //     std::cout << "RIGHT " << node->right->min_x << " " << node->right->max_x << " " << node->right->min_y << " " << node->right->max_y << std::endl;
-        // }
 
         return node;
     }
@@ -299,8 +260,6 @@ private:
             double bin_area = this->get_bin_area(*node);
 
             double p_xy = calculate_p_xy(bin_count, bin_area);
-
-            // std::cout << bin_count << " " << bin_area << " " << p_xy << std::endl;
 
             if (p_xy > 0) {
                 mi += p_xy * std::log(p_xy) * bin_area;
@@ -364,10 +323,6 @@ double KDTree<int>::get_bin_area(const KDNode<int> & node) const {
 
     double y_min = this->copula->cdf_y(node.min_y);
     double y_max = this->copula->cdf_y(node.max_y);
-
-    // std::cout << node.min_x << " " << node.max_x << " " << node.min_y << " " << node.max_y << std::endl;
-    // std::cout << x_min << " " << x_max << " " << y_min << " " << y_max << std::endl;
-    // std::cout << std::endl;
 
     double width = x_max - x_min;
     double height = y_max - y_min;

@@ -13,6 +13,9 @@ endif()
 # Option to enable Boost (ON by default)
 option(ENABLE_BOOST "Enable Boost Libraries" ON)
 
+# Option to enable Benchmark (OFF by default)
+option(ENABLE_BENCHMARK "Enable Google Benchmark" ON)
+
 find_package(Python 3.9 COMPONENTS Interpreter Development.Module REQUIRED)
 #find_package(pybind11 CONFIG REQUIRED)
 add_subdirectory(extern/pybind11)
@@ -20,6 +23,11 @@ add_subdirectory(extern/pybind11)
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 
 find_package(FastNB REQUIRED)
+
+# Find required packages
+if(ENABLE_BENCHMARK)
+    find_package(benchmark REQUIRED)
+endif()
 
 # Include FetchContent module
 include(FetchContent)
@@ -96,6 +104,13 @@ target_link_libraries(fast_mi_lib PUBLIC
 pybind11_add_module(fast_mutual_information fast_mutual_information/bindings.cpp)
 
 target_link_libraries(fast_mutual_information PRIVATE fast_mi_lib)
+
+if(ENABLE_BENCHMARK)
+    target_link_libraries(fast_mi PRIVATE benchmark::benchmark)
+    target_compile_definitions(fast_mi PRIVATE ENABLE_BENCHMARK=1)
+    target_compile_definitions(fast_mi_lib PRIVATE ENABLE_BENCHMARK=1)
+    target_compile_definitions(fast_mutual_information PRIVATE ENABLE_BENCHMARK=1)
+endif()
 
 # Set compiler flags based on the environment - maybe we can be a bit less strict
 # for Apple silicon?

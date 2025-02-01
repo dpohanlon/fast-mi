@@ -95,7 +95,7 @@ static void BM_MI(benchmark::State& state) {
 
     Eigen::MatrixXd cov = correlationToCovariance(corr, variance);
 
-    int num_samples = 1000000;
+    int num_samples = 100000;
 
     Eigen::MatrixXd samples = sampleMultivariateNormal(mean, cov, num_samples);
 

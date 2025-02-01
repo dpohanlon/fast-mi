@@ -11,6 +11,9 @@
 #include <cmath>
 #include <functional>
 
+#include <boost/sort/sort.hpp>
+#include <boost/sort/spreadsort/spreadsort.hpp>
+
 #include "absl/container/flat_hash_map.h"
 
 #include "copula.hpp"
@@ -143,6 +146,42 @@ private:
 
         return unique_points;
     }
+
+    std::vector<std::pair<Point<int>, int>> count_duplicates_sorted(const std::vector<Point<int>>& points) {
+        if (points.empty()) return {};
+
+        auto sorted_points = points;
+
+        std::sort(sorted_points.begin(), sorted_points.end(), [](const Point<int>& a, const Point<int>& b) {
+            return (a.x < b.x) || ((a.x == b.x) && (a.y < b.y));
+        });
+
+        // std::stable_sort(sorted_points.begin(), sorted_points.end(), [](const Point<int>& a, const Point<int>& b) {
+        //     if (a.x != b.x)
+        //         return a.x < b.x;
+        //     return a.y < b.y;
+        // });
+
+        // boost::sort::spreadsort::integer_sort(sorted_points.begin(), sorted_points.end(),
+        //                                      boost::sort::spreadsort::integer_traits<Point<int>>::base());
+
+
+        std::vector<std::pair<Point<int>, int>> result;
+        Point<int> current = sorted_points[0];
+        int count = 1;
+        for (std::size_t i = 1; i < sorted_points.size(); ++i) {
+            if (sorted_points[i].x == current.x && sorted_points[i].y == current.y) {
+                ++count;
+            } else {
+                result.emplace_back(current, count);
+                current = sorted_points[i];
+                count = 1;
+            }
+        }
+        result.emplace_back(current, count);
+        return result;
+    }
+
 
     std::unique_ptr<KDNode<T>> build(std::vector<std::pair<Point<T>, int>>& points,
                                   int depth,
@@ -298,7 +337,7 @@ KDTree<int>::KDTree(const std::vector<Point<int>>& points, Copula * copula, int 
 
     total_count = points.size();
 
-    std::vector<std::pair<Point<int>, int>> unique_points = count_duplicates_absl(points);
+    std::vector<std::pair<Point<int>, int>> unique_points = count_duplicates_sorted(points);
 
     // These are the boundaries of the input data that then get mapped to [0, 1, 0, 1] when transformed via the CDF
 

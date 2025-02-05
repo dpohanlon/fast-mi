@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <memory>
 #include <cmath>
+#include <limits>
 #include <unordered_map>
 #include <functional>
 
@@ -21,13 +22,13 @@
 #include "point.hpp"
 #include "utils.hpp"
 
-
 template <typename T>
 struct KDNode {
 
-    T min_x, max_x;
-    T min_y, max_y;
+    // Use bounds struct here
+    Bounds<T> bounds;
 
+    // Not present in RLE case
     std::vector<std::pair<Point<T>, int>> points;
 
     bool is_leaf;
@@ -37,16 +38,16 @@ struct KDNode {
     std::unique_ptr<KDNode> left;
     std::unique_ptr<KDNode> right;
 
-    KDNode() : is_leaf(false), split_dim(0), split_val(0),
-               min_x(1E8), max_x(-1E8),
-               min_y(1E8), max_y(-1E8) {}
+    KDNode() : is_leaf(false), split_dim(0), split_val(0) {
+        bounds = {INT_MAX, INT_MIN, INT_MAX, INT_MIN};
+    }
 
     T get_width(void) const {
-        return max_x - min_x;
+        return bounds.max_x - bounds.min_x;
     }
 
     T get_height(void) const {
-        return max_y - min_y;
+        return bounds.max_y - bounds.min_y;
     }
 
     int total_counts(void) const;
@@ -221,17 +222,12 @@ private:
 
 
     std::unique_ptr<KDNode<T>> build(std::vector<std::pair<Point<T>, int>>& points,
-                                  int depth,
-                                  T min_x, T max_x,
-                                  T min_y, T max_y) {
+                                  int depth, Bounds<T> bounds) {
 
         auto node = std::make_unique<KDNode<T>>();
-        node->min_x = min_x;
-        node->max_x = max_x;
-        node->min_y = min_y;
-        node->max_y = max_y;
+        node->bounds = bounds;
 
-        bool degenerate_split = (max_x - min_x < 1E-8) || (max_y - min_y < 1E-8);
+        bool degenerate_split = (bounds.max_x - bounds.min_x < 1E-8) || (bounds.max_y - bounds.min_y < 1E-8);
 
         // This is controlled by the number of points rather than the number of points including the duplicates as we don't want to end up with nowhere to split
         if (points.size() <= static_cast<size_t>(max_points) || degenerate_split) {
@@ -281,31 +277,33 @@ private:
 
         // Handle potential empty subsets by enforcing the bounding box split
 
-         if (!left_points.empty()) {
-            node->left = build(left_points, depth + 1,
-                               min_x, (axis == 0 ? median_val : max_x),
-                               min_y, (axis == 1 ? median_val : max_y));
+        Bounds<T> left_bounds;
+        left_bounds.min_x = bounds.min_x;
+        left_bounds.max_x = (axis == 0 ? median_val : bounds.max_x);
+        left_bounds.min_y = bounds.min_y;
+        left_bounds.max_y = (axis == 1 ? median_val : bounds.max_y);
+
+        if (!left_points.empty()) {
+            node->left = build(left_points, depth + 1, bounds);
         } else {
             auto leaf = std::make_unique<KDNode<T>>();
             leaf->is_leaf = true;
-            leaf->min_x = min_x;
-            leaf->max_x = (axis == 0 ? median_val : max_x);
-            leaf->min_y = min_y;
-            leaf->max_y = (axis == 1 ? median_val : max_y);
+            leaf->bounds = left_bounds;
             node->left = std::move(leaf);
         }
 
+        Bounds<T> right_bounds;
+        right_bounds.min_x = (axis == 0 ? median_val : bounds.min_x);
+        right_bounds.max_x = bounds.max_x;
+        right_bounds.min_y = (axis == 1 ? median_val : bounds.min_y);
+        right_bounds.max_y = bounds.max_y;
+
         if (!right_points.empty()) {
-            node->right = build(right_points, depth + 1,
-                                (axis == 0 ? median_val : min_x), max_x,
-                                (axis == 1 ? median_val : min_y), max_y);
+            node->right = build(right_points, depth + 1, bounds);
         } else {
             auto leaf = std::make_unique<KDNode<T>>();
             leaf->is_leaf = true;
-            leaf->min_x = (axis == 0 ? median_val : min_x);
-            leaf->max_x = max_x;
-            leaf->min_y = (axis == 1 ? median_val : min_y);
-            leaf->max_y = max_y;
+            leaf->bounds = right_bounds;
             node->right = std::move(leaf);
         }
 
@@ -365,7 +363,9 @@ KDTree<T>::KDTree(const std::vector<Point<T>>& points, Copula * copula, int max_
 
     // These are the boundaries of the unit square for assumed U[0, 1] if passed anything other than ints
 
-    root = build(unique_points, 0, 0.0, 1.0, 0.0, 1.0);
+    Bounds<T> bounds = {0.0, 1.0, 0.0, 1.0};
+
+    root = build(unique_points, 0, bounds);
 }
 
 template <>
@@ -378,10 +378,24 @@ KDTree<int>::KDTree(const std::vector<Point<int>>& points, Copula * copula, int 
 
     // These are the boundaries of the input data that then get mapped to [0, 1, 0, 1] when transformed via the CDF
 
-    auto [min_x, max_x, min_y, max_y] = get_bounds(points);
+    Bounds<int> bounds = get_bounds(points);
 
-    root = build(unique_points, 0, min_x, max_x, min_y, max_y);
+    root = build(unique_points, 0, bounds);
 }
+
+// // For pre-calculated duplicates on RLE vectors
+// template <>
+// KDTree<int>::KDTree(std::vector<std::pair<Point<int>, int>> & unique_points, int nPoints, Copula * copula, int max_points_per_leaf)
+//     : max_points(max_points_per_leaf), copula(copula) {
+
+//     total_count = nPoints;
+
+//     // These are the boundaries of the input data that then get mapped to [0, 1, 0, 1] when transformed via the CDF
+
+//     Bounds bounds = get_bounds(points);
+
+//     root = build(unique_points, 0, bounds);
+// }
 
 template <typename T>
 double KDTree<T>::get_bin_area(const KDNode<T> & node) const {
@@ -394,11 +408,11 @@ double KDTree<int>::get_bin_area(const KDNode<int> & node) const {
     // Transform to the uniform distribution via the CDF, to get
     // the area in U[0, 1] space
 
-    double x_min = this->copula->cdf_x(node.min_x);
-    double x_max = this->copula->cdf_x(node.max_x);
+    double x_min = this->copula->cdf_x(node.bounds.min_x);
+    double x_max = this->copula->cdf_x(node.bounds.max_x);
 
-    double y_min = this->copula->cdf_y(node.min_y);
-    double y_max = this->copula->cdf_y(node.max_y);
+    double y_min = this->copula->cdf_y(node.bounds.min_y);
+    double y_max = this->copula->cdf_y(node.bounds.max_y);
 
     double width = x_max - x_min;
     double height = y_max - y_min;

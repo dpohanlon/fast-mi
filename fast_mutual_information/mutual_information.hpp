@@ -13,6 +13,9 @@
 // Set up with a class, configure, then run MI calculation
 // TODO: Take Eigen vectors of means and variances
 
+// MI base class with two subclasses, one with straight data, one precalculated
+// or do run length decoding inside?
+
 template <typename T>
 class MutualInformation {
 public:
@@ -108,6 +111,16 @@ double mutual_information(double mean1, double std_dev1, double mean2, double st
 
 }
 
+// Where the duplicate counting has already been done (e.g., from RLE representations)
+// double mutual_information(double mean1, double std_dev1, double mean2, double std_dev2, std::vector<std::pair<Point<int>, int>> & data, int min_pop = 25)
+// {
+//     MutualInformation<int> mi(data, min_pop);
+//     mi.setNormalCDF(mean1, std_dev1, mean2, std_dev2);
+
+//     return mi.mutual_information();
+
+// }
+
 double mutual_information(Eigen::MatrixXd & data, int min_pop = 25)
 {
 
@@ -133,6 +146,14 @@ double mutual_information_normal(double mean1, double std_dev1, double mean2, do
 
     return mutual_information(point_samples, min_pop);
 }
+
+// double mutual_information_quantised_rle(double mean1, double std_dev1, double mean2, double std_dev2, std::vector<std::pair<int, int>> rle1, std::vector<std::pair<int, int>> rle2, int min_pop = 25)
+// {
+
+//     std::vector<std::pair<Point<int>, int>> point_samples = runLengthDecoding(rle1, rle2);
+
+//     return mutual_information(mean1, std_dev1, mean2, std_dev2, point_samples, min_pop);
+// }
 
 double mutual_information_quantised(double mean1, double std_dev1, double mean2, double std_dev2, Eigen::MatrixXd & data, int min_pop = 25)
 {

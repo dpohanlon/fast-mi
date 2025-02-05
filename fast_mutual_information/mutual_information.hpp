@@ -168,6 +168,7 @@ double mutual_information_quantised_rle(double mean1, double std_dev1, double me
 
     std::vector<std::pair<Point<int>, int>> point_samples = runLengthDecoding(rle1, rle2);
 
+    // A little inefficient, as we can cache these per feature separately
     Bounds<int> bounds = get_bounds(point_samples);
 
     return mutual_information(mean1, std_dev1, mean2, std_dev2, point_samples, nPoints, bounds, min_pop);

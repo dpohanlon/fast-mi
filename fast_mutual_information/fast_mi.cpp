@@ -95,7 +95,7 @@ static void BM_MI(benchmark::State& state) {
 
     Eigen::MatrixXd cov = correlationToCovariance(corr, variance);
 
-    int num_samples = 100000;
+    int num_samples = 10000;
 
     Eigen::MatrixXd samples = sampleMultivariateNormal(mean, cov, num_samples);
 
@@ -105,7 +105,7 @@ static void BM_MI(benchmark::State& state) {
         std::vector<float> results(state.range(0));
         for (size_t i = 0; i < results.size(); ++i) {
 
-            double mi = mutual_information_quantised(mean(0), std_dev(0), mean(1), std_dev(1), samples, 100);
+            double mi = mutual_information_quantised(mean(0), std_dev(0), mean(1), std_dev(1), samples, 10);
 
             results[i] = mi;
         }

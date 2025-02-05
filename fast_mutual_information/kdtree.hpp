@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <memory>
 #include <cmath>
+#include <unordered_map>
 #include <functional>
 
 #include <boost/sort/sort.hpp>
@@ -56,6 +57,18 @@ struct KDNode {
 
 };
 
+namespace std {
+    template <>
+    struct hash<Point<int>> {
+        std::size_t operator()(const Point<int>& p) const {
+            auto h1 = std::hash<int>()(p.x);
+            auto h2 = std::hash<int>()(p.y);
+            // Combine the two hash values.
+            return h1 ^ (h2 + 0x9e3779b97f4a7c15ULL + (h1 << 6) + (h1 >> 2));
+        }
+    };
+}
+
 template <typename T>
 int KDNode<T>::total_counts(void) const {
     // Here we assume that the points are unique, the second element of the pair is 1
@@ -72,6 +85,8 @@ int KDNode<int>::total_counts(void) const {
 
     return count;
 }
+
+
 
 template <typename T>
 class KDTree {
@@ -147,6 +162,28 @@ private:
         return unique_points;
     }
 
+    std::vector<std::pair<Point<int>, int>> count_duplicates_unordered(const std::vector<Point<int>>& points) {
+        std::unordered_map<Point<int>, int> counts;
+        for (const auto& pt : points) {
+            ++counts[pt];
+        }
+
+        std::vector<std::pair<Point<int>, int>> result;
+        result.reserve(counts.size());
+        for (const auto& entry : counts) {
+            result.emplace_back(entry.first, entry.second);
+        }
+
+        // These will be sorted when splitting anyway
+
+        // To match the lexicographical order from the sorting version.
+        // std::sort(result.begin(), result.end(), [](const auto& a, const auto& b) {
+        //     return a.first < b.first;
+        // });
+
+        return result;
+    }
+
     std::vector<std::pair<Point<int>, int>> count_duplicates_sorted(const std::vector<Point<int>>& points) {
         if (points.empty()) return {};
 
@@ -207,12 +244,12 @@ private:
         node->split_dim = axis;
 
         if (axis == 0) {
-            std::sort(points.begin(), points.end(),
+            std::nth_element(points.begin(), points.begin() + points.size() / 2, points.end(),
                       [](const std::pair<Point<T>, int>& a, const std::pair<Point<T>, int>& b) -> bool {
                           return a.first.x < b.first.x;
                       });
         } else {
-            std::sort(points.begin(), points.end(),
+            std::nth_element(points.begin(), points.begin() + points.size() / 2, points.end(),
                       [](const std::pair<Point<T>, int>& a, const std::pair<Point<T>, int>& b) -> bool {
                           return a.first.y < b.first.y;
                       });
@@ -337,7 +374,7 @@ KDTree<int>::KDTree(const std::vector<Point<int>>& points, Copula * copula, int 
 
     total_count = points.size();
 
-    std::vector<std::pair<Point<int>, int>> unique_points = count_duplicates_sorted(points);
+    std::vector<std::pair<Point<int>, int>> unique_points = count_duplicates_unordered(points);
 
     // These are the boundaries of the input data that then get mapped to [0, 1, 0, 1] when transformed via the CDF
 

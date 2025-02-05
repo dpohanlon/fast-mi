@@ -35,6 +35,8 @@ public:
 
     }
 
+    MutualInformation(std::vector<std::pair<Point<int>, int>>& data, int max_points_per_leaf);
+
     // Strictly speaking, this is not necessary, but is nice for a comparison
     void setNormalCopula(double mean1, double std_dev1, double mean2, double std_dev2)
     {
@@ -53,9 +55,18 @@ public:
         this->copula->icdf_y = [](double v) -> double { return v; };
     }
 
-    void setData(std::vector<Point<T>> & data, int min_pop = 10)
+    void setData(const std::vector<Point<T>> & data, int min_pop = 10)
     {
         this->tree = KDTree<T>(data, this->copula, min_pop);
+    }
+
+    void setData(std::vector<std::pair<Point<int>, int>> & data, int min_pop = 10)
+    {
+        int nPounds = 10;
+        Bounds<int> bounds = {0, 1, 0, 1};
+
+        // Use the RLE constructor
+        this->tree = KDTree<T>(data, nPounds, bounds, this->copula, min_pop);
     }
 
     void setNormalPMF(double mean1, double std_dev1, double mean2, double std_dev2)
@@ -90,6 +101,13 @@ private:
 
 };
 
+template <>
+MutualInformation<int>::MutualInformation(std::vector<std::pair<Point<int>, int>>& data, int max_points_per_leaf)
+{
+    this->copula = new Copula();
+    this->setData(data, max_points_per_leaf);
+}
+
 template <typename T>
 double mutual_information(std::vector<Point<T>> & data, int min_pop = 25)
 {
@@ -112,14 +130,14 @@ double mutual_information(double mean1, double std_dev1, double mean2, double st
 }
 
 // Where the duplicate counting has already been done (e.g., from RLE representations)
-// double mutual_information(double mean1, double std_dev1, double mean2, double std_dev2, std::vector<std::pair<Point<int>, int>> & data, int min_pop = 25)
-// {
-//     MutualInformation<int> mi(data, min_pop);
-//     mi.setNormalCDF(mean1, std_dev1, mean2, std_dev2);
+double mutual_information(double mean1, double std_dev1, double mean2, double std_dev2, std::vector<std::pair<Point<int>, int>> & data, int min_pop = 25)
+{
+    MutualInformation<int> mi(data, min_pop);
+    mi.setNormalCDF(mean1, std_dev1, mean2, std_dev2);
 
-//     return mi.mutual_information();
+    return mi.mutual_information();
 
-// }
+}
 
 double mutual_information(Eigen::MatrixXd & data, int min_pop = 25)
 {

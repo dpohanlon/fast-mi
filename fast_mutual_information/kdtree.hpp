@@ -97,6 +97,8 @@ public:
 
     KDTree(const std::vector<Point<T>>& points, Copula * copula, int max_points_per_leaf = 10);
 
+    KDTree( std::vector<std::pair<Point<int>, int>> & unique_points, int nPoints, Bounds<int> bounds, Copula * copula, int max_points_per_leaf);
+
     double get_correction() const {
         int depth = get_tree_depth();
 
@@ -383,19 +385,13 @@ KDTree<int>::KDTree(const std::vector<Point<int>>& points, Copula * copula, int 
     root = build(unique_points, 0, bounds);
 }
 
-// // For pre-calculated duplicates on RLE vectors
-// template <>
-// KDTree<int>::KDTree(std::vector<std::pair<Point<int>, int>> & unique_points, int nPoints, Copula * copula, int max_points_per_leaf)
-//     : max_points(max_points_per_leaf), copula(copula) {
+// For pre-calculated duplicates on RLE vectors - would be nice to make this const, but then it has to be sorted
+template <>
+KDTree<int>::KDTree( std::vector<std::pair<Point<int>, int>> & unique_points, int nPoints, Bounds<int> bounds, Copula * copula, int max_points_per_leaf)
+    : max_points(max_points_per_leaf), copula(copula) {
 
-//     total_count = nPoints;
-
-//     // These are the boundaries of the input data that then get mapped to [0, 1, 0, 1] when transformed via the CDF
-
-//     Bounds bounds = get_bounds(points);
-
-//     root = build(unique_points, 0, bounds);
-// }
+    root = build(unique_points, 0, bounds);
+}
 
 template <typename T>
 double KDTree<T>::get_bin_area(const KDNode<T> & node) const {

@@ -35,7 +35,7 @@ public:
 
     }
 
-    MutualInformation(std::vector<std::pair<Point<int>, int>>& data, int max_points_per_leaf);
+    MutualInformation(std::vector<std::pair<Point<int>, int>>& data, int nPoints, Bounds<int> bounds, int max_points_per_leaf);
 
     // Strictly speaking, this is not necessary, but is nice for a comparison
     void setNormalCopula(double mean1, double std_dev1, double mean2, double std_dev2)
@@ -60,13 +60,11 @@ public:
         this->tree = KDTree<T>(data, this->copula, min_pop);
     }
 
-    void setData(std::vector<std::pair<Point<int>, int>> & data, int min_pop = 10)
+    void setData(std::vector<std::pair<Point<int>, int>> & data, int nPoints, Bounds<int> bounds, int min_pop = 10)
     {
-        int nPounds = 10;
-        Bounds<int> bounds = {0, 1, 0, 1};
 
         // Use the RLE constructor
-        this->tree = KDTree<T>(data, nPounds, bounds, this->copula, min_pop);
+        this->tree = KDTree<T>(data, nPoints, bounds, this->copula, min_pop);
     }
 
     void setNormalPMF(double mean1, double std_dev1, double mean2, double std_dev2)
@@ -102,10 +100,10 @@ private:
 };
 
 template <>
-MutualInformation<int>::MutualInformation(std::vector<std::pair<Point<int>, int>>& data, int max_points_per_leaf)
+MutualInformation<int>::MutualInformation(std::vector<std::pair<Point<int>, int>>& data, int nPoints, Bounds<int> bounds, int max_points_per_leaf)
 {
     this->copula = new Copula();
-    this->setData(data, max_points_per_leaf);
+    this->setData(data, nPoints, bounds, max_points_per_leaf);
 }
 
 template <typename T>
@@ -130,9 +128,9 @@ double mutual_information(double mean1, double std_dev1, double mean2, double st
 }
 
 // Where the duplicate counting has already been done (e.g., from RLE representations)
-double mutual_information(double mean1, double std_dev1, double mean2, double std_dev2, std::vector<std::pair<Point<int>, int>> & data, int min_pop = 25)
+double mutual_information(double mean1, double std_dev1, double mean2, double std_dev2, std::vector<std::pair<Point<int>, int>> & data, int nPoints, Bounds<int> bounds, int min_pop = 25)
 {
-    MutualInformation<int> mi(data, min_pop);
+    MutualInformation<int> mi(data, nPoints, bounds, min_pop);
     mi.setNormalCDF(mean1, std_dev1, mean2, std_dev2);
 
     return mi.mutual_information();
@@ -141,7 +139,6 @@ double mutual_information(double mean1, double std_dev1, double mean2, double st
 
 double mutual_information(Eigen::MatrixXd & data, int min_pop = 25)
 {
-
     std::vector<Point<double>> point_samples = convertSamplesToPoints(data);
 
     return mutual_information(point_samples, min_pop);
@@ -165,13 +162,16 @@ double mutual_information_normal(double mean1, double std_dev1, double mean2, do
     return mutual_information(point_samples, min_pop);
 }
 
-// double mutual_information_quantised_rle(double mean1, double std_dev1, double mean2, double std_dev2, std::vector<std::pair<int, int>> rle1, std::vector<std::pair<int, int>> rle2, int min_pop = 25)
-// {
+// TODO: Find a better way to integrate all of these parameters, particularly the total number of points and the overall bounds
+double mutual_information_quantised_rle(double mean1, double std_dev1, double mean2, double std_dev2, std::vector<std::pair<int, int>> rle1, std::vector<std::pair<int, int>> rle2, int nPoints, int min_pop = 25)
+{
 
-//     std::vector<std::pair<Point<int>, int>> point_samples = runLengthDecoding(rle1, rle2);
+    std::vector<std::pair<Point<int>, int>> point_samples = runLengthDecoding(rle1, rle2);
 
-//     return mutual_information(mean1, std_dev1, mean2, std_dev2, point_samples, min_pop);
-// }
+    Bounds<int> bounds = get_bounds(point_samples);
+
+    return mutual_information(mean1, std_dev1, mean2, std_dev2, point_samples, nPoints, bounds, min_pop);
+}
 
 double mutual_information_quantised(double mean1, double std_dev1, double mean2, double std_dev2, Eigen::MatrixXd & data, int min_pop = 25)
 {

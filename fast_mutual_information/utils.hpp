@@ -1,6 +1,9 @@
 #pragma once
 
 #include <numeric>
+#include <vector>
+#include <limits>
+#include <algorithm>
 
 #include <Eigen/Dense>
 
@@ -234,4 +237,26 @@ Bounds<T> get_bounds(const std::vector<Point<T>>& points) {
   }
 
   return bounds;
+}
+
+Bounds<int> get_bounds(const std::vector<std::pair<Point<int>, int>>& points) {
+  if (points.empty()) {
+    // Handle empty case as needed; here we return a default-constructed Bounds.
+    return Bounds<int>();
+  }
+
+  int min_x = std::numeric_limits<int>::max();
+  int max_x = std::numeric_limits<int>::min();
+  int min_y = std::numeric_limits<int>::max();
+  int max_y = std::numeric_limits<int>::min();
+
+  for (const auto& pair : points) {
+    const Point<int>& pt = pair.first;
+    min_x = std::min(min_x, pt.x);
+    max_x = std::max(max_x, pt.x);
+    min_y = std::min(min_y, pt.y);
+    max_y = std::max(max_y, pt.y);
+  }
+
+  return Bounds<int>(min_x, max_x, min_y, max_y);
 }

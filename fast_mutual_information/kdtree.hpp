@@ -28,7 +28,6 @@ struct KDNode {
     // Use bounds struct here
     Bounds<T> bounds;
 
-    // Not present in RLE case
     std::vector<std::pair<Point<T>, int>> points;
 
     bool is_leaf;

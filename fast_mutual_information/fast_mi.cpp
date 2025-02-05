@@ -114,31 +114,6 @@ static void BM_MI(benchmark::State& state) {
     state.SetComplexityN(state.range(0));
 }
 
-Eigen::MatrixXd sampleMultivariateNormal2(const Eigen::VectorXd &mean,
-                                           const Eigen::MatrixXd &cov,
-                                           int num_samples)
-{
-    const int dim = mean.size();
-    Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eigenSolver(cov);
-    Eigen::MatrixXd transform = eigenSolver.eigenvectors() *
-                                eigenSolver.eigenvalues().cwiseMax(0).cwiseSqrt().asDiagonal();
-
-    // Set up a standard normal generator.
-    std::mt19937 rng(42);
-    std::normal_distribution<double> standard_normal(0.0, 1.0);
-
-    // Create matrix to hold samples: each row is a sample.
-    Eigen::MatrixXd samples(num_samples, dim);
-    for (int i = 0; i < num_samples; ++i) {
-        Eigen::VectorXd z(dim);
-        for (int d = 0; d < dim; ++d) {
-            z(d) = standard_normal(rng);
-        }
-        samples.row(i) = mean + transform * z;
-    }
-    return samples;
-}
-
 Eigen::MatrixXd sampleIndependentNormals(const Eigen::VectorXd &mean,
                                            const Eigen::VectorXd &variance,
                                            int num_samples)
@@ -161,7 +136,7 @@ Eigen::MatrixXd sampleIndependentNormals(const Eigen::VectorXd &mean,
 static void BM_RLE_MI(benchmark::State& state) {
     // Here, N is both the number of dimensions and the number of correlated normals.
     const int N = state.range(0);
-    const int num_samples = 10000; // number of samples drawn from the multivariate normal
+    const int num_samples = 1000; // number of samples drawn from the multivariate normal
 
     // Setup random generators.
     std::mt19937 rng(42);
@@ -179,35 +154,6 @@ static void BM_RLE_MI(benchmark::State& state) {
     for (int i = 0; i < N; ++i) {
         variance(i) = variance_dist(rng);
     }
-
-    // Generate a random correlation matrix (N x N).
-    // One common method is to generate an N x N matrix A with normally distributed entries,
-    // then form the Gram matrix A * A^T, which is positive definite.
-    // Eigen::MatrixXd A(N, N);
-    // std::normal_distribution<double> normal_dist(0.0, 1.0);
-    // for (int i = 0; i < N; ++i)
-    //     for (int j = 0; j < N; ++j)
-    //         A(i, j) = normal_dist(rng);
-    // Eigen::MatrixXd corr = A * A.transpose();
-
-    // // Normalize the Gram matrix to obtain a proper correlation matrix.
-    // for (int i = 0; i < N; ++i) {
-    //     double diag = std::sqrt(corr(i, i));
-    //     for (int j = 0; j < N; ++j) {
-    //         double diag_j = std::sqrt(corr(j, j));
-    //         corr(i, j) /= (diag * diag_j);
-    //     }
-    //     corr(i, i) = 1.0;  // Ensure the diagonal is exactly 1.
-    // }
-
-
-
-    // Convert the correlation matrix and variances into a covariance matrix.
-    // Eigen::MatrixXd cov = correlationToCovariance(corr, variance);
-
-    // Sample from the N-dimensional multivariate normal.
-    // The returned samples matrix has shape: num_samples x N.
-    // Eigen::MatrixXd samples = sampleMultivariateNormal2(mean, cov, num_samples);
 
     Eigen::MatrixXd samples = sampleIndependentNormals(mean, variance, num_samples);
 

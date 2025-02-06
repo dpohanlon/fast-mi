@@ -240,8 +240,8 @@ Eigen::MatrixXd mutual_information_rle(Eigen::MatrixXi & samples, Eigen::VectorX
     }
 
     // I don't *think* that the rle vectors are modified, but replace all of the downstream functions with const versions, to be sure
-    //
-    #pragma omp parallel
+
+    #pragma omp parallel for
     for (int i = 0; i < samples.cols(); i++) {
         for (int j = i + 1; j < samples.cols(); j++) {
 

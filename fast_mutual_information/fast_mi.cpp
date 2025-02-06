@@ -6,6 +6,9 @@
 #include <benchmark/benchmark.h>
 #endif
 
+#include <cstdlib>
+#include <omp.h>
+#include <thread>
 #include <iostream>
 #include <fstream>
 #include <vector>
@@ -75,6 +78,15 @@ Eigen::MatrixXd sampleIndependentNormals(const Eigen::VectorXd &mean,
 }
 
 static void BM_RLE_MI(benchmark::State& state) {
+
+    if (std::getenv("OMP_NUM_THREADS") == nullptr) {
+        unsigned int numCores = std::thread::hardware_concurrency();
+        if (numCores == 0) {
+            numCores = 1; // Fallback if hardware_concurrency cannot detect cores.
+        }
+        omp_set_num_threads(static_cast<int>(numCores / 2));
+    }
+
     // Here, N is both the number of dimensions and the number of correlated normals.
     const int N = state.range(0);
     const int num_samples = 10000; // number of samples drawn from the multivariate normal
@@ -96,37 +108,19 @@ static void BM_RLE_MI(benchmark::State& state) {
         variance(i) = variance_dist(rng);
     }
 
-    Eigen::MatrixXd samples = sampleIndependentNormals(mean, variance, num_samples);
-
-    // For each of the N dimensions, quantise (round) the values and
-    // pack them into a run-length encoded vector.
-    std::vector<std::vector<std::pair<int, int>>> all_rle;
-    all_rle.reserve(N);
-    for (int col = 0; col < N; ++col) {
-        std::vector<int> quantised;
-        quantised.reserve(num_samples);
-        for (int i = 0; i < num_samples; ++i) {
-            // Quantise by rounding.
-            quantised.push_back(static_cast<int>(std::round(samples(i, col))));
-        }
-        auto rle = runLengthEncoding(quantised);
-        all_rle.push_back(std::move(rle));
-    }
+    Eigen::MatrixXi samples = sampleIndependentNormals(mean, variance, num_samples).cast<int>();
 
     for (auto _ : state) {
 
-        for (int i = 0; i < N; i++) {
-            for (int j = i; j < N; j++) {
-                double mi = mutual_information_quantised_rle(mean(i), std::sqrt(variance(i)), mean(j), std::sqrt(variance(j)), all_rle[i], all_rle[j], num_samples);
-                benchmark::DoNotOptimize(mi);
-            }
-        }
+        Eigen::MatrixXd mi = mutual_information_rle(samples, mean, variance);
+
+        benchmark::DoNotOptimize(mi);
 
     }
     state.SetComplexityN(N);
 }
 
-BENCHMARK(BM_MI)->Range(16, 1 << 16)->Complexity();
-BENCHMARK(BM_RLE_MI)->Range(16, 1 << 16)->Complexity();
+// BENCHMARK(BM_MI)->Range(16, 1 << 16)->Complexity();
+BENCHMARK(BM_RLE_MI)->Range(16, 1 << 14)->Complexity();
 
 BENCHMARK_MAIN();

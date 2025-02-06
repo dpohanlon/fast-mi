@@ -4,6 +4,7 @@
 
 template<typename T>
 struct DistributionFunctions {
+    // Sometimes also a PMF depending on the type
     using pdf_f = std::function<double(T)>;
     using cdf_f = std::function<double(T)>;
     using icdf_f = std::function<T(double)>;

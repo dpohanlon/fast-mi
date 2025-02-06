@@ -42,6 +42,13 @@ std::vector<std::pair<int, int>> runLengthEncoding(std::vector<int> & points)
 
 }
 
+std::vector<std::pair<int, int>> runLengthEncoding(const Eigen::Ref<const Eigen::VectorXi>& points)
+{
+    std::vector<int> eigen_vector(points.data(), points.data() + points.size());
+
+    return runLengthEncoding(eigen_vector);
+}
+
 // This function takes two run-length encoded vectors of ints, where each
 // element is a pair {value, count}. It "zips" the two sequences into a sequence
 // of Point<int> (with x from the first sequence and y from the second) and produces

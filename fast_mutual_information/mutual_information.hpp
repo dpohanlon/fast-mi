@@ -2,6 +2,8 @@
 
 #include <functional>
 
+#include <omp.h>
+
 #include <Eigen/Dense>
 #include "fast_negative_binomial/fast_nb.hpp"
 
@@ -12,9 +14,7 @@
 
 // Set up with a class, configure, then run MI calculation
 // TODO: Take Eigen vectors of means and variances
-
-// MI base class with two subclasses, one with straight data, one precalculated
-// or do run length decoding inside?
+//       This is also quite a chunky file, maybe split it up.
 
 template <typename T>
 class MutualInformation {
@@ -223,4 +223,35 @@ double mutual_information_nb(double mean1, double conc1, double mean2, double co
     std::vector<Point<int>> point_samples = convertSamplesToPointsQuantised(data);
 
     return mutual_information_nb(mean1, conc1, mean2, conc2, point_samples, min_pop);
+}
+
+Eigen::MatrixXd mutual_information_rle(Eigen::MatrixXi & samples, Eigen::VectorXd means, Eigen::VectorXd variances)
+{
+
+    // Beware of types - integer matrix input
+
+    std::vector<std::vector<std::pair<int, int>>> rle(samples.cols());
+
+    Eigen::MatrixXd results(samples.cols(), samples.cols());
+
+    #pragma omp parallel for
+    for (int i = 0; i < samples.cols(); i++) {
+        rle[i] = runLengthEncoding(samples.col(i));
+    }
+
+    // I don't *think* that the rle vectors are modified, but replace all of the downstream functions with const versions, to be sure
+    //
+    #pragma omp parallel
+    for (int i = 0; i < samples.cols(); i++) {
+        for (int j = i + 1; j < samples.cols(); j++) {
+
+            double mi = 0.0;
+
+            mi = mutual_information_quantised_rle(means(i), std::sqrt(variances(i)), means(j), std::sqrt(variances(j)), rle[i], rle[j], samples.rows());
+
+            results(i, j) = mi;
+        }
+    }
+
+    return results;
 }

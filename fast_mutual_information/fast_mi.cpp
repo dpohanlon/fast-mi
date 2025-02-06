@@ -113,8 +113,6 @@ static void BM_RLE_MI(benchmark::State& state) {
         all_rle.push_back(std::move(rle));
     }
 
-    // In the benchmark loop, simply aggregate some property of the pre-generated RLE
-    // to simulate processing and to prevent the compiler from optimizing the code away.
     for (auto _ : state) {
 
         for (int i = 0; i < N; i++) {

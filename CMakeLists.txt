@@ -30,21 +30,21 @@ if(ENABLE_BENCHMARK)
 endif()
 
 # Include FetchContent module
-include(FetchContent)
+#include(FetchContent)
 
 # Declare Google Abseil
-FetchContent_Declare(
-    abseil
-    GIT_REPOSITORY https://github.com/abseil/abseil-cpp.git
-)
+#FetchContent_Declare(
+#    abseil
+#    GIT_REPOSITORY https://github.com/abseil/abseil-cpp.git
+#)
 
 # Optionally set Abseil CMake options before fetching
-set(absl_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
-set(absl_BUILD_TESTING OFF CACHE BOOL "" FORCE)
-set(absl_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+#set(absl_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+#set(absl_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+#set(absl_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
 # Make Abseil available
-FetchContent_MakeAvailable(abseil)
+#FetchContent_MakeAvailable(abseil)
 
 if(ENABLE_BOOST)
     # Specify the Boost components you need
@@ -83,7 +83,7 @@ target_include_directories(fast_mi_lib PUBLIC
 find_package(Threads REQUIRED)
 
 target_link_libraries(fast_mi PUBLIC
-    absl::flat_hash_map
+#    absl::flat_hash_map
     Threads::Threads
     Eigen3::Eigen
     Boost::headers
@@ -92,7 +92,7 @@ target_link_libraries(fast_mi PUBLIC
 )
 
 target_link_libraries(fast_mi_lib PUBLIC
-    absl::flat_hash_map
+#    absl::flat_hash_map
     Threads::Threads
     Eigen3::Eigen
     Boost::headers

@@ -106,6 +106,8 @@ MutualInformation<int>::MutualInformation(std::vector<std::pair<Point<int>, int>
     this->setData(data, nPoints, bounds, max_points_per_leaf);
 }
 
+// Unqualified these correspond to uniform distributions, in both the raw and transformed spaces. Qualified, these have the kd-tree calculated in the raw space, but the MI calculated in the transformed space using the copula.
+
 template <typename T>
 double mutual_information(std::vector<Point<T>> & data, int min_pop = 25)
 {
@@ -118,7 +120,7 @@ double mutual_information(std::vector<Point<T>> & data, int min_pop = 25)
 
 // Pass normal parameters so the CDF can be calculated on the fly
 template <typename T>
-double mutual_information(double mean1, double std_dev1, double mean2, double std_dev2, std::vector<Point<T>> & data, int min_pop = 25)
+double mutual_information_normal(double mean1, double std_dev1, double mean2, double std_dev2, std::vector<Point<T>> & data, int min_pop = 25)
 {
     MutualInformation<T> mi(data, min_pop);
     mi.setNormalCDF(mean1, std_dev1, mean2, std_dev2);
@@ -128,7 +130,7 @@ double mutual_information(double mean1, double std_dev1, double mean2, double st
 }
 
 // Where the duplicate counting has already been done (e.g., from RLE representations)
-double mutual_information(double mean1, double std_dev1, double mean2, double std_dev2, std::vector<std::pair<Point<int>, int>> & data, int nPoints, Bounds<int> bounds, int min_pop = 25)
+double mutual_information_normal(double mean1, double std_dev1, double mean2, double std_dev2, std::vector<std::pair<Point<int>, int>> & data, int nPoints, Bounds<int> bounds, int min_pop = 25)
 {
     MutualInformation<int> mi(data, nPoints, bounds, min_pop);
     mi.setNormalCDF(mean1, std_dev1, mean2, std_dev2);
@@ -137,7 +139,7 @@ double mutual_information(double mean1, double std_dev1, double mean2, double st
 
 }
 
-double mutual_information(Eigen::MatrixXd & data, int min_pop = 25)
+double mutual_information_normal(Eigen::MatrixXd & data, int min_pop = 25)
 {
     std::vector<Point<double>> point_samples = convertSamplesToPoints(data);
 
@@ -171,7 +173,7 @@ double mutual_information_quantised_rle(double mean1, double std_dev1, double me
     // A little inefficient, as we can cache these per feature separately
     Bounds<int> bounds = get_bounds(point_samples);
 
-    return mutual_information(mean1, std_dev1, mean2, std_dev2, point_samples, nPoints, bounds, min_pop);
+    return mutual_information_normal(mean1, std_dev1, mean2, std_dev2, point_samples, nPoints, bounds, min_pop);
 }
 
 double mutual_information_quantised(double mean1, double std_dev1, double mean2, double std_dev2, Eigen::MatrixXd & data, int min_pop = 25)
@@ -179,7 +181,7 @@ double mutual_information_quantised(double mean1, double std_dev1, double mean2,
 
     std::vector<Point<int>> point_samples = convertSamplesToPointsQuantised(data);
 
-    return mutual_information(mean1, std_dev1, mean2, std_dev2, point_samples, min_pop);
+    return mutual_information_normal(mean1, std_dev1, mean2, std_dev2, point_samples, min_pop);
 }
 
 // // Mutual information with NB distributed marginals
@@ -203,7 +205,7 @@ double mutual_information_quantised(double mean1, double std_dev1, double mean2,
 // {
 //     // Real value input - quantise first
 
-//     std::vector<Point> Point_samples = convertSamplesToPoints(data);
+//     std::vector<Point> point_samples = convertSamplesToPoints(data);
 
-//     return mutual_information_nb(mean1, conc1, mean2, conc2, Point_samples, min_pop);
+//     return mutual_information_nb(mean1, conc1, mean2, conc2, point_samples, min_pop);
 // }

@@ -16,7 +16,7 @@
 #include <boost/sort/sort.hpp>
 #include <boost/sort/spreadsort/spreadsort.hpp>
 
-#include "absl/container/flat_hash_map.h"
+// #include "absl/container/flat_hash_map.h"
 
 #include "copula.hpp"
 #include "point.hpp"
@@ -143,26 +143,26 @@ private:
 
     // For ints this can be optimised by sorting!
 
-    std::vector<std::pair<Point<int>, int>> count_duplicates_absl(const std::vector<Point<int>>& points) {
+    // std::vector<std::pair<Point<int>, int>> count_duplicates_absl(const std::vector<Point<int>>& points) {
 
-        absl::flat_hash_map<std::pair<int, int>, int, absl::Hash<std::pair<int, int>>> point_map;
+    //     absl::flat_hash_map<std::pair<int, int>, int, absl::Hash<std::pair<int, int>>> point_map;
 
-        point_map.reserve(points.size() / 2);
+    //     point_map.reserve(points.size() / 2);
 
-        for (const auto& pt : points) {
-            std::pair<int, int> key = {pt.x, pt.y};
-            point_map[key]++;
-        }
+    //     for (const auto& pt : points) {
+    //         std::pair<int, int> key = {pt.x, pt.y};
+    //         point_map[key]++;
+    //     }
 
-        std::vector<std::pair<Point<int>, int>> unique_points;
-        unique_points.reserve(point_map.size());
+    //     std::vector<std::pair<Point<int>, int>> unique_points;
+    //     unique_points.reserve(point_map.size());
 
-        for (const auto& entry : point_map) {
-            unique_points.emplace_back(std::make_pair(Point<T>{entry.first.first, entry.first.second}, entry.second));
-        }
+    //     for (const auto& entry : point_map) {
+    //         unique_points.emplace_back(std::make_pair(Point<T>{entry.first.first, entry.first.second}, entry.second));
+    //     }
 
-        return unique_points;
-    }
+    //     return unique_points;
+    // }
 
     std::vector<std::pair<Point<int>, int>> count_duplicates_unordered(const std::vector<Point<int>>& points) {
         std::unordered_map<Point<int>, int> counts;

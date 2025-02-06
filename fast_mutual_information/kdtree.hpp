@@ -94,9 +94,9 @@ public:
 
     KDTree() {}
 
-    KDTree(const std::vector<Point<T>>& points, Copula * copula, int max_points_per_leaf = 10);
+    KDTree(const std::vector<Point<T>>& points, Copula<T> * copula, int max_points_per_leaf = 10);
 
-    KDTree( std::vector<std::pair<Point<int>, int>> & unique_points, int nPoints, Bounds<int> bounds, Copula * copula, int max_points_per_leaf);
+    KDTree( std::vector<std::pair<Point<int>, int>> & unique_points, int nPoints, Bounds<int> bounds, Copula<int> * copula, int max_points_per_leaf);
 
     double get_correction() const {
         int depth = get_tree_depth();
@@ -137,7 +137,7 @@ private:
     int max_points;
     int total_count;
 
-    Copula * copula;
+    Copula<T> * copula;
 
     double get_bin_area(const KDNode<T> & node) const;
 
@@ -351,7 +351,7 @@ private:
 };
 
 template <typename T>
-KDTree<T>::KDTree(const std::vector<Point<T>>& points, Copula * copula, int max_points_per_leaf)
+KDTree<T>::KDTree(const std::vector<Point<T>>& points, Copula<T> * copula, int max_points_per_leaf)
     : max_points(max_points_per_leaf), copula(copula) {
 
     total_count = points.size();
@@ -370,7 +370,7 @@ KDTree<T>::KDTree(const std::vector<Point<T>>& points, Copula * copula, int max_
 }
 
 template <>
-KDTree<int>::KDTree(const std::vector<Point<int>>& points, Copula * copula, int max_points_per_leaf)
+KDTree<int>::KDTree(const std::vector<Point<int>>& points, Copula<int> * copula, int max_points_per_leaf)
     : max_points(max_points_per_leaf), copula(copula) {
 
     total_count = points.size();
@@ -386,7 +386,7 @@ KDTree<int>::KDTree(const std::vector<Point<int>>& points, Copula * copula, int 
 
 // For pre-calculated duplicates on RLE vectors - would be nice to make this const, but then it has to be sorted
 template <>
-KDTree<int>::KDTree( std::vector<std::pair<Point<int>, int>> & unique_points, int nPoints, Bounds<int> bounds, Copula * copula, int max_points_per_leaf)
+KDTree<int>::KDTree( std::vector<std::pair<Point<int>, int>> & unique_points, int nPoints, Bounds<int> bounds, Copula<int> * copula, int max_points_per_leaf)
     : max_points(max_points_per_leaf), copula(copula) {
 
     root = build(unique_points, 0, bounds);

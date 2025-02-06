@@ -161,6 +161,7 @@ std::vector<Point<int>> convertSamplesToPointsQuantised(
     return points;
 }
 
+// Make this templated, but have to use the 'long' form of the Eigen type names
 std::vector<Point<double>> convertSamplesToPoints(const Eigen::MatrixXd& samples)
 {
     // Ensure that the samples matrix has exactly 2 rows for x and y

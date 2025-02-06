@@ -2,25 +2,29 @@
 
 #include<functional>
 
-// typedef std::function<double(int)> pmf_f;
-// typedef std::function<double(int)> cdf_f;
-// typedef std::function<int(double)> icdf_f;
+template<typename T>
+struct DistributionFunctions {
+    using pdf_f = std::function<double(T)>;
+    using cdf_f = std::function<double(T)>;
+    using icdf_f = std::function<T(double)>;
+};
 
-typedef std::function<double(double)> pmf_f;
-typedef std::function<double(double)> cdf_f;
-typedef std::function<double(double)> icdf_f;
-
+template<typename T>
 class Copula {
-
 public:
+
+    using pdf_f  = typename DistributionFunctions<T>::pdf_f;
+    using cdf_f  = typename DistributionFunctions<T>::cdf_f;
+    using icdf_f = typename DistributionFunctions<T>::icdf_f;
 
     Copula() {}
 
-    Copula(pmf_f p_x, pmf_f p_y, cdf_f cdf_x, cdf_f cdf_y, icdf_f icdf_x, icdf_f icdf_y) : p_x(p_x), p_y(p_y), cdf_x(cdf_x), cdf_y(cdf_y), icdf_x(icdf_x), icdf_y(icdf_y) {}
+    Copula(pdf_f p_x, pdf_f p_y, cdf_f cdf_x, cdf_f cdf_y, icdf_f icdf_x, icdf_f icdf_y)
+        : p_x(p_x), p_y(p_y), cdf_x(cdf_x), cdf_y(cdf_y), icdf_x(icdf_x), icdf_y(icdf_y) {}
 
     // PDFs
-    pmf_f p_x;
-    pmf_f p_y;
+    pdf_f p_x;
+    pdf_f p_y;
 
     // CDFs
     cdf_f cdf_x;
@@ -29,5 +33,4 @@ public:
     // Inverse CDFs
     icdf_f icdf_x;
     icdf_f icdf_y;
-
 };

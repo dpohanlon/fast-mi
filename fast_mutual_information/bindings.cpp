@@ -11,15 +11,16 @@ PYBIND11_MODULE(fast_mutual_information, m) {
 
     m.def(
         "mi_normal",
-        [](double mean1, double std_dev1, double mean2, double std_dev2, Eigen::MatrixXd & data) -> double { return mutual_information_normal(mean1, std_dev1, mean2, std_dev2, data); },
-        py::arg("mean1"), py::arg("mean2"), py::arg("std_dev1"), py::arg("std_dev2"), py::arg("data"),
+        [](double mean1, double std_dev1, double mean2, double std_dev2, Eigen::MatrixXd & data, int min_pop) -> double { return mutual_information_normal(mean1, std_dev1, mean2, std_dev2, data, min_pop); },
+        py::arg("mean1"), py::arg("mean2"), py::arg("std_dev1"), py::arg("std_dev2"), py::arg("data"), py::arg("min_pop") = 25,
         "Fast mutual information computation with normally distributed marginals.\n\n"
         "Parameters:\n"
         "    mean1 (float): Mean of the first axis normal distribution.\n"
         "    std_dev1 (float): Standard-deviation of the first axis normal distribution.\n"
         "    mean2 (float): Mean of the second axis normal distribution\n"
         "    std_dev2 (float): Standard-deviation of the second axis normal distribution.\n"
-        "    data (np.array): Data array of shape (Nsamples, 2).\n\n"
+        "    data (np.array): Data array of shape (Nsamples, 2).\n"
+        "    min_pop (int): Mininmum bin population.\n\n"
         "Returns:\n"
         "    float: The mutual information.");
 

@@ -225,7 +225,7 @@ double mutual_information_nb(double mean1, double conc1, double mean2, double co
     return mutual_information_nb(mean1, conc1, mean2, conc2, point_samples, min_pop);
 }
 
-Eigen::MatrixXd mutual_information_rle(Eigen::MatrixXi & samples, Eigen::VectorXd means, Eigen::VectorXd variances)
+Eigen::MatrixXd mutual_information_rle(Eigen::MatrixXi & samples, Eigen::VectorXd means, Eigen::VectorXd variances, int min_pop = 25)
 {
 
     // Beware of types - integer matrix input

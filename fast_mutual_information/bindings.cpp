@@ -37,9 +37,24 @@ PYBIND11_MODULE(fast_mutual_information, m) {
         "Returns:\n"
         "    np.array: Array of mutual information values.");
 
+    // Only the concentration formulation (i.e., 'nb2') for the moment
+    // Also only the run length encoding version, so strictly only integer data
+
+    m.def(
+        "mi_negative_binomial",
+        [](Eigen::MatrixXi & data, Eigen::VectorXd & means, Eigen::VectorXd & concentrations, int min_pop) -> Eigen::MatrixXd { return mutual_information_nb_rle(data, means, concentrations, min_pop); },
+        py::arg("data"), py::arg("means"), py::arg("variances"), py::arg("min_pop") = 25,
+        "Fast mutual information computation with negative binomial marginals.\n\n"
+        "Parameters:\n"
+        "    data (np.array): Integer data array of shape (Nsamples, Nfeatures).\n"
+        "    means (np.array): Means of each negative binomial distribution (Nfeatures, 1).\n"
+        "    concentrations (np.array): concentrations of each negative binomial distribution (Nfeatures, 1).\n"
+        "    min_pop (int): Mininmum bin population.\n\n"
+        "Returns:\n"
+        "    np.array: Array of mutual information values.");
+
 }
 
 
-// Add a function in mutual_information to take data for nb (maybe have a better interface)
 // Add code in python to do the nb fits, etc
 // Copy over CI code

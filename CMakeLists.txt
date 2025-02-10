@@ -13,6 +13,9 @@ endif()
 # Option to enable Boost (ON by default)
 option(ENABLE_BOOST "Enable Boost Libraries" ON)
 
+# Option to enable Benchmark (OFF by default)
+option(ENABLE_BENCHMARK "Enable Google Benchmark" ON)
+
 find_package(Python 3.9 COMPONENTS Interpreter Development.Module REQUIRED)
 #find_package(pybind11 CONFIG REQUIRED)
 add_subdirectory(extern/pybind11)
@@ -21,22 +24,27 @@ find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 
 find_package(FastNB REQUIRED)
 
+# Find required packages
+if(ENABLE_BENCHMARK)
+    find_package(benchmark REQUIRED)
+endif()
+
 # Include FetchContent module
-include(FetchContent)
+#include(FetchContent)
 
 # Declare Google Abseil
-FetchContent_Declare(
-    abseil
-    GIT_REPOSITORY https://github.com/abseil/abseil-cpp.git
-)
+#FetchContent_Declare(
+#    abseil
+#    GIT_REPOSITORY https://github.com/abseil/abseil-cpp.git
+#)
 
 # Optionally set Abseil CMake options before fetching
-set(absl_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
-set(absl_BUILD_TESTING OFF CACHE BOOL "" FORCE)
-set(absl_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+#set(absl_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+#set(absl_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+#set(absl_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
 # Make Abseil available
-FetchContent_MakeAvailable(abseil)
+#FetchContent_MakeAvailable(abseil)
 
 if(ENABLE_BOOST)
     # Specify the Boost components you need
@@ -75,7 +83,7 @@ target_include_directories(fast_mi_lib PUBLIC
 find_package(Threads REQUIRED)
 
 target_link_libraries(fast_mi PUBLIC
-    absl::flat_hash_map
+#    absl::flat_hash_map
     Threads::Threads
     Eigen3::Eigen
     Boost::headers
@@ -84,7 +92,7 @@ target_link_libraries(fast_mi PUBLIC
 )
 
 target_link_libraries(fast_mi_lib PUBLIC
-    absl::flat_hash_map
+#    absl::flat_hash_map
     Threads::Threads
     Eigen3::Eigen
     Boost::headers
@@ -96,6 +104,13 @@ target_link_libraries(fast_mi_lib PUBLIC
 pybind11_add_module(fast_mutual_information fast_mutual_information/bindings.cpp)
 
 target_link_libraries(fast_mutual_information PRIVATE fast_mi_lib)
+
+if(ENABLE_BENCHMARK)
+    target_link_libraries(fast_mi PRIVATE benchmark::benchmark)
+    target_compile_definitions(fast_mi PRIVATE ENABLE_BENCHMARK=1)
+    target_compile_definitions(fast_mi_lib PRIVATE ENABLE_BENCHMARK=1)
+    target_compile_definitions(fast_mutual_information PRIVATE ENABLE_BENCHMARK=1)
+endif()
 
 # Set compiler flags based on the environment - maybe we can be a bit less strict
 # for Apple silicon?

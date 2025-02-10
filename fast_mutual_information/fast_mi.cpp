@@ -2,10 +2,13 @@
 #include <cmath>
 #include <numeric>
 
-// #ifdef ENABLE_BENCHMARK
-// #include <benchmark/benchmark.h>
-// #endif
+#ifdef ENABLE_BENCHMARK
+#include <benchmark/benchmark.h>
+#endif
 
+#include <cstdlib>
+#include <omp.h>
+#include <thread>
 #include <iostream>
 #include <fstream>
 #include <vector>
@@ -14,95 +17,110 @@
 #include <cmath>
 #include <functional>
 
+#include <Eigen/Dense>
+
 #include "kdtree.hpp"
 #include "tests.hpp"
 #include "mvn.hpp"
 #include "utils.hpp"
 #include "mutual_information.hpp"
 
-int main() {
+static void BM_MI(benchmark::State& state) {
 
     Eigen::VectorXd mean(2);
-    mean << 10.0, 50.0;
+    mean << 40.0, 150.0;
 
     Eigen::VectorXd variance(2);
-    variance << 5.0, 15.0;
+    variance << 30.0, 50.0;
 
     Eigen::MatrixXd corr(2, 2);
     corr <<  1.0,  -0.7,
             -0.7,  1.0;
 
-    const double step = 0.01;
+    Eigen::MatrixXd cov = correlationToCovariance(corr, variance);
 
-    std::vector<double> rho_vec;
-    std::vector<double> mi_analytical_vec;
-    std::vector<double> mi_tree_vec;
+    int num_samples = 10000;
 
-    for (double rho = -0.99; rho <= 1.0; rho += step) {
+    Eigen::MatrixXd samples = sampleMultivariateNormal(mean, cov, num_samples);
 
-        rho_vec.push_back(rho);
+    Eigen::VectorXd std_dev = variance.array().sqrt();
 
-        corr(0, 1) = rho;
-        corr(1, 0) = rho;
+    for (auto _ : state) {
+        std::vector<float> results(state.range(0));
+        for (size_t i = 0; i < results.size(); ++i) {
 
-        Eigen::MatrixXd cov = correlationToCovariance(corr, variance);
+            double mi = mutual_information_quantised(mean(0), std_dev(0), mean(1), std_dev(1), samples, 10);
 
-        int num_samples = 1000;
-
-        Eigen::MatrixXd samples = sampleMultivariateNormal(mean, cov, num_samples);
-
-        double mi = mutual_information_normal(mean(0), std::sqrt(variance(0)), mean(1), std::sqrt(variance(1)), samples);
-
-        double analyticalMI = -0.5 * std::log(1 - std::pow(corr(0, 1), 2));
-
-        mi_analytical_vec.push_back(analyticalMI);
-        mi_tree_vec.push_back(mi);
-
+            results[i] = mi;
+        }
+        benchmark::DoNotOptimize(results);
     }
-
-    std::string csv_filename = "mi_1k.csv";
-
-    std::ofstream file(csv_filename);
-
-    file << "rho,mi,mi_tree\n";
-
-    file << std::fixed << std::setprecision(6);
-
-    for (int i = 0; i < rho_vec.size(); i++) {
-        file << rho_vec[i] << "," << mi_analytical_vec[i] << "," << mi_tree_vec[i] << "\n";
-    }
-
-    file.close();
-
+    state.SetComplexityN(state.range(0));
 }
 
-// static void BM_MI(benchmark::State& state) {
+Eigen::MatrixXd sampleIndependentNormals(const Eigen::VectorXd &mean,
+                                           const Eigen::VectorXd &variance,
+                                           int num_samples)
+{
+    const int dim = mean.size();
+    Eigen::MatrixXd samples(num_samples, dim);
+    std::mt19937 rng(42);
+    for (int d = 0; d < dim; ++d) {
+        // Create a normal distribution for the d-th feature.
+        double m = mean(d);
+        double sd = std::sqrt(variance(d));
+        std::normal_distribution<double> norm(m, sd);
+        for (int i = 0; i < num_samples; ++i) {
+            samples(i, d) = norm(rng);
+        }
+    }
+    return samples;
+}
 
-//     std::vector<Point> data = generate_correlated_data(state.range(0));
+static void BM_RLE_MI(benchmark::State& state) {
 
-//     for (auto _ : state) {
-//         std::vector<float> results(state.range(0));
-//         for (size_t i = 0; i < results.size(); ++i) {
+    if (std::getenv("OMP_NUM_THREADS") == nullptr) {
+        unsigned int numCores = std::thread::hardware_concurrency();
+        if (numCores == 0) {
+            numCores = 1; // Fallback if hardware_concurrency cannot detect cores.
+        }
+        omp_set_num_threads(static_cast<int>(numCores / 2));
+    }
 
-//             KDTree tree(data, 10);
+    // Here, N is both the number of dimensions and the number of correlated normals.
+    const int N = state.range(0);
+    const int num_samples = 10000; // number of samples drawn from the multivariate normal
 
-//             NegativeBinomial nb_x(5.0, 0.5);
-//             NegativeBinomial nb_y(5.0, 0.5);
+    // Setup random generators.
+    std::mt19937 rng(42);
+    std::uniform_real_distribution<double> mean_dist(0.0, 100.0);
+    std::uniform_real_distribution<double> variance_dist(10.0, 100.0);
 
-//             auto p_x_func = [&](int x) -> double {
-//                 return nb_x.pmf(x);
-//             };
-//             auto p_y_func = [&](int y) -> double {
-//                 return nb_y.pmf(y);
-//             };
+    // Generate a random mean vector (size N).
+    Eigen::VectorXd mean(N);
+    for (int i = 0; i < N; ++i) {
+        mean(i) = mean_dist(rng);
+    }
 
-//             results[i] = tree.compute_mutual_information(p_x_func, p_y_func);
-//         }
-//         benchmark::DoNotOptimize(results);
-//     }
-//     state.SetComplexityN(state.range(0));
-// }
+    // Generate a random variance vector (size N).
+    Eigen::VectorXd variance(N);
+    for (int i = 0; i < N; ++i) {
+        variance(i) = variance_dist(rng);
+    }
+
+    Eigen::MatrixXi samples = sampleIndependentNormals(mean, variance, num_samples).cast<int>();
+
+    for (auto _ : state) {
+
+        Eigen::MatrixXd mi = mutual_information_rle(samples, mean, variance);
+
+        benchmark::DoNotOptimize(mi);
+
+    }
+    state.SetComplexityN(N);
+}
 
 // BENCHMARK(BM_MI)->Range(16, 1 << 16)->Complexity();
+BENCHMARK(BM_RLE_MI)->Range(16, 1 << 14)->Complexity();
 
-// BENCHMARK_MAIN();
+BENCHMARK_MAIN();

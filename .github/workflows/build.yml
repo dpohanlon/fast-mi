@@ -84,7 +84,7 @@ jobs:
               run: |
                   pip install nose2
                   pip install scipy
-                  pip install wheelhouse/fast_mutual_information-*-cp313-cp313-manylinux_2_28_x86_64.whl
+                  pip install wheelhouse/fast_mutual_information-${{ github.ref_name }}-cp313-cp313-manylinux_2_28_x86_64.whl
                   cd tests
                   nose2
 

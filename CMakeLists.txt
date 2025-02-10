@@ -22,7 +22,8 @@ add_subdirectory(extern/pybind11)
 
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 
-find_package(FastNB REQUIRED)
+#find_package(FastNB REQUIRED)
+add_subdirectory(extern/FastNB)
 
 # Find required packages
 if(ENABLE_BENCHMARK)

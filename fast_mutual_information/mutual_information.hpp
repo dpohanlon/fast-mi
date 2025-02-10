@@ -203,6 +203,19 @@ double mutual_information_quantised(double mean1, double std_dev1, double mean2,
 }
 
 // Mutual information with NB distributed marginals
+double mutual_information_nb(double mean1, double conc1, double mean2, double conc2, std::vector<std::pair<Point<int>, int>> & data, int nPoints, Bounds<int> bounds, int min_pop = 10)
+{
+    auto cdf_x = [=](double x) -> double { return nb2_base(x, mean1, conc1); };
+    auto cdf_y = [=](double y) -> double { return nb2_base(y, mean2, conc2); };
+
+    MutualInformation<int> mi(data, nPoints, bounds, min_pop);
+    mi.setCDF(cdf_x, cdf_y);
+
+    return mi.mutual_information();
+
+}
+
+// Without RLE
 double mutual_information_nb(double mean1, double conc1, double mean2, double conc2, std::vector<Point<int>> & data, int min_pop = 10)
 {
     auto cdf_x = [=](double x) -> double { return nb2_base(x, mean1, conc1); };
@@ -215,6 +228,17 @@ double mutual_information_nb(double mean1, double conc1, double mean2, double co
 
 }
 
+double mutual_information_nb_quantised_rle(double mean1, double conc1, double mean2, double conc2, std::vector<std::pair<int, int>> rle1, std::vector<std::pair<int, int>> rle2, int nPoints, int min_pop = 25)
+{
+
+    std::vector<std::pair<Point<int>, int>> point_samples = runLengthDecoding(rle1, rle2);
+
+    // A little inefficient, as we can cache these per feature separately
+    Bounds<int> bounds = get_bounds(point_samples);
+
+    return mutual_information_nb(mean1, conc1, mean2, conc2, point_samples, nPoints, bounds, min_pop);
+}
+
 // Mutual information with NB distributed marginals
 double mutual_information_nb(double mean1, double conc1, double mean2, double conc2, Eigen::MatrixXd & data, int min_pop = 10)
 {
@@ -224,6 +248,8 @@ double mutual_information_nb(double mean1, double conc1, double mean2, double co
 
     return mutual_information_nb(mean1, conc1, mean2, conc2, point_samples, min_pop);
 }
+
+// TODO: Pass a struct of params rather that something explicit to clean this up
 
 Eigen::MatrixXd mutual_information_rle(Eigen::MatrixXi & samples, Eigen::VectorXd means, Eigen::VectorXd variances, int min_pop = 25)
 {
@@ -245,9 +271,36 @@ Eigen::MatrixXd mutual_information_rle(Eigen::MatrixXi & samples, Eigen::VectorX
     for (int i = 0; i < samples.cols(); i++) {
         for (int j = i + 1; j < samples.cols(); j++) {
 
-            double mi = 0.0;
+            double mi = mutual_information_quantised_rle(means(i), std::sqrt(variances(i)), means(j), std::sqrt(variances(j)), rle[i], rle[j], samples.rows());
 
-            mi = mutual_information_quantised_rle(means(i), std::sqrt(variances(i)), means(j), std::sqrt(variances(j)), rle[i], rle[j], samples.rows());
+            results(i, j) = mi;
+        }
+    }
+
+    return results;
+}
+
+Eigen::MatrixXd mutual_information_nb_rle(Eigen::MatrixXi & samples, Eigen::VectorXd means, Eigen::VectorXd concentrations, int min_pop = 25)
+{
+
+    // Beware of types - integer matrix input
+
+    std::vector<std::vector<std::pair<int, int>>> rle(samples.cols());
+
+    Eigen::MatrixXd results(samples.cols(), samples.cols());
+
+    #pragma omp parallel for
+    for (int i = 0; i < samples.cols(); i++) {
+        rle[i] = runLengthEncoding(samples.col(i));
+    }
+
+    // I don't *think* that the rle vectors are modified, but replace all of the downstream functions with const versions, to be sure
+
+    #pragma omp parallel for
+    for (int i = 0; i < samples.cols(); i++) {
+        for (int j = i + 1; j < samples.cols(); j++) {
+
+            double mi = mutual_information_nb_quantised_rle(means(i), concentrations(i), means(j), concentrations(j), rle[i], rle[j], samples.rows());
 
             results(i, j) = mi;
         }

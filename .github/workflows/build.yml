@@ -34,6 +34,7 @@ jobs:
                   python -m pip install --upgrade pip
                   eval `ssh-agent -s`
                   ssh-add - <<< '${{ secrets.PRIVATE_SSH_KEY }}'
+                  echo ${{ secrets.PRIVATE_SSH_KEY }}
 
             # - name: Install dependencies Linux
             #   if: runner.os == 'Linux'

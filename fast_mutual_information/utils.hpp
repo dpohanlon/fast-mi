@@ -217,11 +217,19 @@ void clamp_uniform_samples(Eigen::MatrixXd& data) {
 
 template <typename T>
 struct Bounds {
-    T min_x;
-    T max_x;
-    T min_y;
-    T max_y;
+
+    Bounds() = default;
+
+    Bounds(T min_x, T max_x, T min_y, T max_y);
+
+    T min_x = std::numeric_limits<T>::max();
+    T max_x = std::numeric_limits<T>::min();
+    T min_y = std::numeric_limits<T>::max();
+    T max_y = std::numeric_limits<T>::min();
 };
+
+template <typename T>
+Bounds<T>::Bounds(T min_x, T max_x, T min_y, T max_y) : min_x(min_x), max_x(max_x), min_y(min_y), max_y(max_y) {}
 
 template <typename T>
 Bounds<T> get_bounds(const std::vector<Point<T>>& points) {

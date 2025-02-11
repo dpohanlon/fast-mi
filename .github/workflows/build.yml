@@ -47,6 +47,8 @@ jobs:
                   brew install libomp
                   brew install boost
                   echo "OpenMP_ROOT=$(brew --prefix)/opt/libomp" >> $GITHUB_ENV
+                  eval `ssh-agent -s`
+                  ssh-add - <<< '${{ secrets.PRIVATE_SSH_KEY }}'
 
             # Make sure we're only building wheels for the OS version we're on
             - name: Set macOS deployment target
@@ -78,6 +80,9 @@ jobs:
                       mkdir build && cd build
                       cmake .. -DCMAKE_INSTALL_PREFIX=/usr/local
                       make install
+                      # Add deploy key to get NB repo
+                      eval `ssh-agent -s`
+                      ssh-add - <<< '${{ secrets.PRIVATE_SSH_KEY }}'
 
             - name: Run Tests
               if: runner.os == 'Linux'

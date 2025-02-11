@@ -1,3 +1,4 @@
+#include <sys/qos.h>
 #include <vector>
 #include <cmath>
 #include <numeric>
@@ -24,6 +25,8 @@
 #include "mvn.hpp"
 #include "utils.hpp"
 #include "mutual_information.hpp"
+
+#ifdef ENABLE_BENCHMARK
 
 static void BM_MI(benchmark::State& state) {
 
@@ -124,3 +127,12 @@ static void BM_RLE_MI(benchmark::State& state) {
 BENCHMARK(BM_RLE_MI)->Range(16, 1 << 14)->Complexity();
 
 BENCHMARK_MAIN();
+
+#else
+
+int main()
+{
+    std::cout << "Thanks for running!" << std::endl;
+}
+
+#endif

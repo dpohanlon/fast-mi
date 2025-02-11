@@ -14,7 +14,7 @@ endif()
 option(ENABLE_BOOST "Enable Boost Libraries" ON)
 
 # Option to enable Benchmark (OFF by default)
-option(ENABLE_BENCHMARK "Enable Google Benchmark" ON)
+option(ENABLE_BENCHMARK "Enable Google Benchmark" OFF)
 
 find_package(Python 3.9 COMPONENTS Interpreter Development.Module REQUIRED)
 #find_package(pybind11 CONFIG REQUIRED)

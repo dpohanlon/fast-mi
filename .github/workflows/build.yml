@@ -30,11 +30,10 @@ jobs:
 
             - name: Install dependencies
               run: |
-                  git submodule update --init --recursive
-                  python -m pip install --upgrade pip
                   eval `ssh-agent -s`
                   ssh-add - <<< '${{ secrets.PRIVATE_SSH_KEY }}'
-                  echo ${{ secrets.PRIVATE_SSH_KEY }}
+                  git submodule update --init --recursive
+                  python -m pip install --upgrade pip
 
             # - name: Install dependencies Linux
             #   if: runner.os == 'Linux'

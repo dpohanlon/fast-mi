@@ -31,7 +31,7 @@ jobs:
             - name: Install dependencies
               run: |
                   eval `ssh-agent -s`
-                  ssh-add - <<< '${{ secrets.PRIVATE_SSH_KEY }}'
+                  ssh-add - <<< "${{ secrets.PRIVATE_SSH_KEY }}"
                   git submodule update --init --recursive
                   python -m pip install --upgrade pip
 

@@ -32,6 +32,8 @@ jobs:
               run: |
                   git submodule update --init --recursive
                   python -m pip install --upgrade pip
+                  eval `ssh-agent -s`
+                  ssh-add - <<< '${{ secrets.PRIVATE_SSH_KEY }}'
 
             # - name: Install dependencies Linux
             #   if: runner.os == 'Linux'
@@ -47,8 +49,6 @@ jobs:
                   brew install libomp
                   brew install boost
                   echo "OpenMP_ROOT=$(brew --prefix)/opt/libomp" >> $GITHUB_ENV
-                  eval `ssh-agent -s`
-                  ssh-add - <<< '${{ secrets.PRIVATE_SSH_KEY }}'
 
             # Make sure we're only building wheels for the OS version we're on
             - name: Set macOS deployment target

@@ -174,7 +174,6 @@ std::vector<Point<int>> convertSamplesToPointsQuantised(
     const Eigen::VectorXd& samples2,
     const std::string& rounding_mode = "round")
 {
-
     if (samples1.size() != samples2.size()) {
         throw std::invalid_argument("Samples vectors must have the same length.");
     }
@@ -237,12 +236,29 @@ std::vector<Point<double>> convertSamplesToPoints(const Eigen::MatrixXd& samples
     return points;
 }
 
+std::vector<Point<double>> convertSamplesToPoints(const Eigen::VectorXd& samples1, const Eigen::VectorXd& samples2)
+{
+    if (samples1.size() != samples2.size()) {
+        throw std::invalid_argument("Samples vectors must have the same length.");
+    }
+
+    int num_samples = static_cast<int>(samples1.rows());
+    std::vector<Point<double>> points(num_samples);
+
+    for (int i = 0; i < num_samples; ++i) {
+        double x = samples1(i);
+        double y = samples2(i);
+
+        points[i] = Point<double>{ x, y };
+    }
+
+    return points;
+}
+
+
 // Function to transform samples from normal to uniform distribution
 Eigen::MatrixXd transformToUniform(const Eigen::MatrixXd& samples, const Eigen::VectorXd& mean, const Eigen::VectorXd& std_dev) {
     Eigen::MatrixXd uniform_samples(samples.rows(), samples.cols());
-
-    // std::cout << samples.rows() <<  " " << samples.cols() << std::endl;
-    // 10, 2
 
     // Cells
     for (int i = 0; i < samples.rows(); ++i) {
@@ -250,6 +266,17 @@ Eigen::MatrixXd transformToUniform(const Eigen::MatrixXd& samples, const Eigen::
         for (int j = 0; j < samples.cols(); ++j) {
             uniform_samples(i, j) = normal_cdf(samples(i, j), mean(j), std_dev(j));
         }
+    }
+
+    return uniform_samples;
+}
+
+Eigen::MatrixXd transformToUniform(const Eigen::VectorXd& samples, const double mean, const double std_dev) {
+    Eigen::VectorXd uniform_samples(samples.size());
+
+    // Cells
+    for (int i = 0; i < samples.size(); ++i) {
+        uniform_samples(i) = normal_cdf(samples(i), mean, std_dev);
     }
 
     return uniform_samples;

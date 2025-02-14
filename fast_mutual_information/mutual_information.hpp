@@ -187,6 +187,17 @@ double mutual_information_normal(double mean1, double std_dev1, double mean2, do
     return mutual_information(point_samples, min_pop);
 }
 
+double mutual_information_normal(double mean1, double std_dev1, double mean2, double std_dev2, Eigen::VectorXd & data1, Eigen::VectorXd& data2, int min_pop = 25)
+{
+
+    Eigen::VectorXd uniform_samples1 = transformToUniform(data1, mean1, std_dev1);
+    Eigen::VectorXd uniform_samples2 = transformToUniform(data2, mean2, std_dev2);
+
+    std::vector<Point<double>> point_samples = convertSamplesToPoints(uniform_samples1, uniform_samples2);
+
+    return mutual_information(point_samples, min_pop);
+}
+
 // TODO: Find a better way to integrate all of these parameters, particularly the total number of points and the overall bounds
 double mutual_information_quantised_rle(double mean1, double std_dev1, double mean2, double std_dev2, std::vector<std::pair<int, int>> rle1, std::vector<std::pair<int, int>> rle2, int nPoints, int min_pop = 25)
 {
@@ -265,7 +276,7 @@ double mutual_information_nb(double mean1, double conc1, double mean2, double co
 
 // TODO: Pass a struct of params rather that something explicit to clean this up
 
-Eigen::MatrixXd mutual_information_rle(Eigen::MatrixXi & samples, Eigen::VectorXd means, Eigen::VectorXd variances, int min_pop = 25)
+Eigen::MatrixXd mutual_information_rle(Eigen::MatrixXi & samples, Eigen::VectorXd means, Eigen::VectorXd std_devs, int min_pop = 25)
 {
 
     // Beware of types - integer matrix input
@@ -285,7 +296,7 @@ Eigen::MatrixXd mutual_information_rle(Eigen::MatrixXi & samples, Eigen::VectorX
     for (int i = 0; i < samples.cols(); i++) {
         for (int j = i + 1; j < samples.cols(); j++) {
 
-            double mi = mutual_information_quantised_rle(means(i), std::sqrt(variances(i)), means(j), std::sqrt(variances(j)), rle[i], rle[j], samples.rows());
+            double mi = mutual_information_quantised_rle(means(i), std_devs(i), means(j), std_devs(j), rle[i], rle[j], samples.rows());
 
             results(i, j) = mi;
         }
@@ -324,7 +335,7 @@ Eigen::MatrixXd mutual_information_nb_rle(Eigen::MatrixXi & samples, Eigen::Vect
 }
 
 // I also want to take in an integer matrix - template it?
-Eigen::MatrixXd mutual_information_normal(Eigen::MatrixXd& samples, Eigen::VectorXd means, Eigen::VectorXd variances, int min_pop = 25)
+Eigen::MatrixXd mutual_information_normal(Eigen::MatrixXd& samples, Eigen::VectorXd means, Eigen::VectorXd std_devs, int min_pop = 25)
 {
     Eigen::MatrixXd results(samples.cols(), samples.cols());
 
@@ -335,9 +346,10 @@ Eigen::MatrixXd mutual_information_normal(Eigen::MatrixXd& samples, Eigen::Vecto
             Eigen::VectorXd f1 = samples.col(i);
             Eigen::VectorXd f2 = samples.col(j);
 
-            // Need to concat f1, f2? Or just write another interface to quantise?
+            // results(i, j) = mutual_information_quantised(means(i), std_devs(i), means(j), std_devs(j), f1, f2, samples.rows());
 
-            results(i, j) = mutual_information_quantised(means(i), variances(i), means(j), variances(j), f1, f2, samples.rows());
+            results(i, j) = mutual_information_normal(means(i), std_devs(i), means(j), std_devs(j), f1, f2);
+
         }
     }
 

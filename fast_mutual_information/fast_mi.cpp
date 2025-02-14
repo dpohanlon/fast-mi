@@ -134,7 +134,7 @@ int main()
 {
     // Here, N is both the number of dimensions and the number of correlated normals.
     const int N = 2;
-    const int num_samples = 100; // number of samples drawn from the multivariate normal
+    const int num_samples = 1000; // number of samples drawn from the multivariate normal
 
     // Setup random generators.
     std::mt19937 rng(42);
@@ -157,9 +157,25 @@ int main()
 
     std::cout << samples.rows() << " " << samples.cols() << std::endl;
 
-    double mi = mutual_information_normal(mean(0), std::sqrt(variance(0)), mean(1), std::sqrt(variance(1)), samples);
+    // Standard 2d
 
-    std::cout << "MI " << mi << std::endl;
+    // double mi_2d = mutual_information_normal(mean(0), std::sqrt(variance(0)), mean(1), std::sqrt(variance(1)), samples);
+
+    Eigen::VectorXd f1 = samples.col(0);
+    Eigen::VectorXd f2 = samples.col(1);
+
+    Eigen::VectorXd std_dev = variance.array().sqrt();
+
+    double mi_2d = mutual_information_normal(mean(0), std_dev(0), mean(1), std_dev(1), f1, f2);
+
+    std::cout << "MI " << mi_2d << std::endl;
+
+    // Standard multi-dimensional
+    Eigen::MatrixXd mi_nd = mutual_information_normal(samples, mean, std_dev);
+
+    std::cout << "MI" << mi_nd << std::endl;
+
+    // RLE multi-dimensional
 
 }
 

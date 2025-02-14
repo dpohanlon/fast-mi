@@ -351,9 +351,27 @@ Eigen::MatrixXd mutual_information_normal(Eigen::MatrixXd& samples, Eigen::Vecto
             Eigen::VectorXd f1 = samples.col(i);
             Eigen::VectorXd f2 = samples.col(j);
 
-            // results(i, j) = mutual_information_quantised(means(i), std_devs(i), means(j), std_devs(j), f1, f2, min_pop);
-
             results(i, j) = mutual_information_normal(means(i), std_devs(i), means(j), std_devs(j), f1, f2, min_pop);
+
+        }
+    }
+
+    return results;
+}
+
+Eigen::MatrixXd mutual_information_normal(Eigen::MatrixXi& samples, Eigen::VectorXd means, Eigen::VectorXd std_devs, int min_pop = 25)
+{
+    Eigen::MatrixXd results(samples.cols(), samples.cols());
+
+    #pragma omp parallel for
+    for (int i = 0; i < samples.cols(); i++) {
+        for (int j = i + 1; j < samples.cols(); j++) {
+
+            // Cast to double so we can use the same point quantisation class, even though these should be ints already
+            Eigen::VectorXd f1 = samples.col(i).cast<double>();
+            Eigen::VectorXd f2 = samples.col(j).cast<double>();
+
+            results(i, j) = mutual_information_quantised(means(i), std_devs(i), means(j), std_devs(j), f1, f2, min_pop);
 
         }
     }

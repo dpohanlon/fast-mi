@@ -38,8 +38,8 @@ PYBIND11_MODULE(fast_mutual_information, m) {
         "    np.array: Array of mutual information values.");
 
     m.def(
-        "mi_normal",
-        [](Eigen::MatrixXi & data, Eigen::VectorXd & means, Eigen::VectorXd & variances, int min_pop) -> Eigen::MatrixXd { return mutual_information_rle(data, means, variances, min_pop); },
+        "mi_normal_q",
+        [](Eigen::MatrixXi & data, Eigen::VectorXd & means, Eigen::VectorXd & variances, int min_pop) -> Eigen::MatrixXd { return mutual_information_normal(data, means, variances, min_pop); },
         py::arg("data"), py::arg("means"), py::arg("variances"), py::arg("min_pop") = 25,
         "Fast mutual information computation with normally distributed marginals.\n\n"
         "Parameters:\n"

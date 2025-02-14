@@ -57,8 +57,6 @@ Eigen::MatrixXd correlationToCovariance(
  */
 double normal_pdf(double x, double mean, double stddev) {
 
-    // std::cout << "PDF " << mean << " " << stddev << std::endl;
-
     if (stddev <= 0.0) {
         throw std::invalid_argument("Standard deviation must be positive.");
     }
@@ -70,7 +68,7 @@ double normal_pdf(double x, double mean, double stddev) {
 // Cumulative Distribution Function (CDF) of the normal distribution
 double normal_cdf(double x, double mean, double stddev) {
 
-    // std::cout << "CDF " << mean << " " << stddev << std::endl;
+    // std::cout << "CDF " << x << " " << mean << " " << stddev << std::endl;
 
     if (stddev <= 0.0) {
         throw std::invalid_argument("Standard deviation must be positive.");

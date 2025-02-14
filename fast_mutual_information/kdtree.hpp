@@ -225,6 +225,8 @@ private:
     std::unique_ptr<KDNode<T>> build(std::vector<std::pair<Point<T>, int>>& points,
                                   int depth, Bounds<T> bounds) {
 
+        // std::cout << bounds.min_x << " " << bounds.max_x << " " << bounds.min_y << " " << bounds.max_y << std::endl;
+
         auto node = std::make_unique<KDNode<T>>();
         node->bounds = bounds;
 
@@ -252,17 +254,18 @@ private:
                       });
         }
 
-
         size_t median_idx = points.size() / 2;
         T median_val = (axis == 0) ? points[median_idx].first.x
                                    : points[median_idx].first.y;
         node->split_val = median_val;
 
+        // std::cout << median_val << std::endl;
+
         std::vector<std::pair<Point<T>, int>> left_points;
         std::vector<std::pair<Point<T>, int>> right_points;
 
         for (const auto& p : points) {
-            int coord = (axis == 0) ? p.first.x : p.first.y;
+            T coord = (axis == 0) ? p.first.x : p.first.y;
             if (coord < median_val) {
                 left_points.emplace_back(p);
             } else if (coord > median_val) {
@@ -284,8 +287,9 @@ private:
         left_bounds.min_y = bounds.min_y;
         left_bounds.max_y = (axis == 1 ? median_val : bounds.max_y);
 
+        // left_bounds not bounds?
         if (!left_points.empty()) {
-            node->left = build(left_points, depth + 1, bounds);
+            node->left = build(left_points, depth + 1, left_bounds);
         } else {
             auto leaf = std::make_unique<KDNode<T>>();
             leaf->is_leaf = true;
@@ -299,8 +303,9 @@ private:
         right_bounds.min_y = (axis == 1 ? median_val : bounds.min_y);
         right_bounds.max_y = bounds.max_y;
 
+        // right_bounds not bounds?
         if (!right_points.empty()) {
-            node->right = build(right_points, depth + 1, bounds);
+            node->right = build(right_points, depth + 1, right_bounds);
         } else {
             auto leaf = std::make_unique<KDNode<T>>();
             leaf->is_leaf = true;
@@ -365,6 +370,13 @@ KDTree<T>::KDTree(const std::vector<Point<T>>& points, Copula<T> * copula, int m
     // These are the boundaries of the unit square for assumed U[0, 1] if passed anything other than ints
 
     Bounds<T> bounds = {0.0, 1.0, 0.0, 1.0};
+
+    // for (auto p : points){
+    //     std::cout << p.x << " " << p.y << std::endl;
+    // }
+    // for (auto p : unique_points){
+    //     std::cout << p.first.x << " " << p.first.y << " " << p.second << std::endl;
+    // }
 
     root = build(unique_points, 0, bounds);
 }

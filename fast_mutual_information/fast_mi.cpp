@@ -26,6 +26,25 @@
 #include "utils.hpp"
 #include "mutual_information.hpp"
 
+Eigen::MatrixXd sampleIndependentNormals(const Eigen::VectorXd &mean,
+                                           const Eigen::VectorXd &variance,
+                                           int num_samples)
+{
+    const int dim = mean.size();
+    Eigen::MatrixXd samples(num_samples, dim);
+    std::mt19937 rng(42);
+    for (int d = 0; d < dim; ++d) {
+        // Create a normal distribution for the d-th feature.
+        double m = mean(d);
+        double sd = std::sqrt(variance(d));
+        std::normal_distribution<double> norm(m, sd);
+        for (int i = 0; i < num_samples; ++i) {
+            samples(i, d) = norm(rng);
+        }
+    }
+    return samples;
+}
+
 #ifdef ENABLE_BENCHMARK
 
 static void BM_MI(benchmark::State& state) {
@@ -59,25 +78,6 @@ static void BM_MI(benchmark::State& state) {
         benchmark::DoNotOptimize(results);
     }
     state.SetComplexityN(state.range(0));
-}
-
-Eigen::MatrixXd sampleIndependentNormals(const Eigen::VectorXd &mean,
-                                           const Eigen::VectorXd &variance,
-                                           int num_samples)
-{
-    const int dim = mean.size();
-    Eigen::MatrixXd samples(num_samples, dim);
-    std::mt19937 rng(42);
-    for (int d = 0; d < dim; ++d) {
-        // Create a normal distribution for the d-th feature.
-        double m = mean(d);
-        double sd = std::sqrt(variance(d));
-        std::normal_distribution<double> norm(m, sd);
-        for (int i = 0; i < num_samples; ++i) {
-            samples(i, d) = norm(rng);
-        }
-    }
-    return samples;
 }
 
 static void BM_RLE_MI(benchmark::State& state) {
@@ -132,7 +132,35 @@ BENCHMARK_MAIN();
 
 int main()
 {
-    std::cout << "Thanks for running!" << std::endl;
+    // Here, N is both the number of dimensions and the number of correlated normals.
+    const int N = 2;
+    const int num_samples = 100; // number of samples drawn from the multivariate normal
+
+    // Setup random generators.
+    std::mt19937 rng(42);
+    std::uniform_real_distribution<double> mean_dist(49., 51.);
+    std::uniform_real_distribution<double> variance_dist(99., 100.0);
+
+    // Generate a random mean vector (size N).
+    Eigen::VectorXd mean(N);
+    for (int i = 0; i < N; ++i) {
+        mean(i) = mean_dist(rng);
+    }
+
+    // Generate a random variance vector (size N).
+    Eigen::VectorXd variance(N);
+    for (int i = 0; i < N; ++i) {
+        variance(i) = variance_dist(rng);
+    }
+
+    Eigen::MatrixXd samples = sampleIndependentNormals(mean, variance, num_samples);
+
+    std::cout << samples.rows() << " " << samples.cols() << std::endl;
+
+    double mi = mutual_information_normal(mean(0), std::sqrt(variance(0)), mean(1), std::sqrt(variance(1)), samples);
+
+    std::cout << "MI " << mi << std::endl;
+
 }
 
 #endif

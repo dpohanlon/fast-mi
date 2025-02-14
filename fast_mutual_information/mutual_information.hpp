@@ -69,20 +69,20 @@ public:
 
     void setNormalPMF(double mean1, double std_dev1, double mean2, double std_dev2)
     {
-        this->copula->p_x = [=](double x) -> double { return normal_pdf(x, mean1, std_dev1); };
-        this->copula->p_y = [=](double y) -> double { return normal_pdf(y, mean2, std_dev2); };
+        this->copula->p_x = [mean1, std_dev1](double x) -> double { return normal_pdf(x, mean1, std_dev1); };
+        this->copula->p_y = [mean2, std_dev2](double y) -> double { return normal_pdf(y, mean2, std_dev2); };
     }
 
     void setNormalCDF(double mean1, double std_dev1, double mean2, double std_dev2)
     {
-        this->copula->cdf_x = [=](double x) -> double { return normal_cdf(x, mean1, std_dev1); };
-        this->copula->cdf_y = [=](double y) -> double { return normal_cdf(y, mean2, std_dev2); };
+        this->copula->cdf_x = [mean1, std_dev1](double x) -> double { return normal_cdf(x, mean1, std_dev1); };
+        this->copula->cdf_y = [mean2, std_dev2](double y) -> double { return normal_cdf(y, mean2, std_dev2); };
     }
 
     void setNormalICDF(double mean1, double std_dev1, double mean2, double std_dev2)
     {
-        this->copula->icdf_x = [=](double x) -> double { return normal_icdf(x, mean1, std_dev1); };
-        this->copula->icdf_y = [=](double y) -> double { return normal_icdf(y, mean2, std_dev2); };
+        this->copula->icdf_x = [mean1, std_dev1](double x) -> double { return normal_icdf(x, mean1, std_dev1); };
+        this->copula->icdf_y = [mean2, std_dev2](double y) -> double { return normal_icdf(y, mean2, std_dev2); };
     }
 
     void setPDF(DistributionFunctions<T>::pdf_f pdf_x, DistributionFunctions<T>::pdf_f pdf_y)
@@ -167,6 +167,8 @@ double mutual_information_normal(Eigen::MatrixXd & data, int min_pop = 25)
 double mutual_information_normal(double mean1, double std_dev1, double mean2, double std_dev2, Eigen::MatrixXd & data, int min_pop = 25)
 {
 
+    // std::cout << "THIS ONE!?" << std::endl;
+
     Eigen::VectorXd mean(2);
     mean << mean1, mean2;
 
@@ -178,6 +180,9 @@ double mutual_information_normal(double mean1, double std_dev1, double mean2, do
     Eigen::MatrixXd uniform_samples = transformToUniform(data, mean, std_dev);
 
     std::vector<Point<double>> point_samples = convertSamplesToPoints(uniform_samples);
+
+    // std::cout << point_samples.size() << std::endl;
+    // std::cout << point_samples[0].x << " " << point_samples[0].y << std::endl;
 
     return mutual_information(point_samples, min_pop);
 }
@@ -201,6 +206,15 @@ double mutual_information_quantised(double mean1, double std_dev1, double mean2,
 
     return mutual_information_normal(mean1, std_dev1, mean2, std_dev2, point_samples, min_pop);
 }
+
+double mutual_information_quantised(double mean1, double std_dev1, double mean2, double std_dev2, Eigen::VectorXd & data1, Eigen::VectorXd data2,  int min_pop = 25)
+{
+
+    std::vector<Point<int>> point_samples = convertSamplesToPointsQuantised(data1, data2);
+
+    return mutual_information_normal(mean1, std_dev1, mean2, std_dev2, point_samples, min_pop);
+}
+
 
 // Mutual information with NB distributed marginals
 double mutual_information_nb(double mean1, double conc1, double mean2, double conc2, std::vector<std::pair<Point<int>, int>> & data, int nPoints, Bounds<int> bounds, int min_pop = 10)
@@ -303,6 +317,27 @@ Eigen::MatrixXd mutual_information_nb_rle(Eigen::MatrixXi & samples, Eigen::Vect
             double mi = mutual_information_nb_quantised_rle(means(i), concentrations(i), means(j), concentrations(j), rle[i], rle[j], samples.rows());
 
             results(i, j) = mi;
+        }
+    }
+
+    return results;
+}
+
+// I also want to take in an integer matrix - template it?
+Eigen::MatrixXd mutual_information_normal(Eigen::MatrixXd& samples, Eigen::VectorXd means, Eigen::VectorXd variances, int min_pop = 25)
+{
+    Eigen::MatrixXd results(samples.cols(), samples.cols());
+
+    #pragma omp parallel for
+    for (int i = 0; i < samples.cols(); i++) {
+        for (int j = i + 1; j < samples.cols(); j++) {
+
+            Eigen::VectorXd f1 = samples.col(i);
+            Eigen::VectorXd f2 = samples.col(j);
+
+            // Need to concat f1, f2? Or just write another interface to quantise?
+
+            results(i, j) = mutual_information_quantised(means(i), variances(i), means(j), variances(j), f1, f2, samples.rows());
         }
     }
 

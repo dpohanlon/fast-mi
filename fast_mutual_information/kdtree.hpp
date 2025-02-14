@@ -113,6 +113,8 @@ public:
         double mi = 0.0;
         double area = 0.0;
 
+        // std::cout << "COPULA " << copula->name << std::endl;
+
         traverse_and_compute(root.get(), mi, area);
 
         return mi;
@@ -232,6 +234,11 @@ private:
 
         bool degenerate_split = (bounds.max_x - bounds.min_x < 1E-8) || (bounds.max_y - bounds.min_y < 1E-8);
 
+        // std::cout << "degenerate " << degenerate_split << std::endl;
+
+        // std::cout << "points " << points.size() << std::endl;
+        // std::cout << "max points " << max_points << std::endl;
+
         // This is controlled by the number of points rather than the number of points including the duplicates as we don't want to end up with nowhere to split
         if (points.size() <= static_cast<size_t>(max_points) || degenerate_split) {
             node->is_leaf = true;
@@ -259,7 +266,7 @@ private:
                                    : points[median_idx].first.y;
         node->split_val = median_val;
 
-        // std::cout << median_val << std::endl;
+        // std::cout << "median " << median_val << std::endl;
 
         std::vector<std::pair<Point<T>, int>> left_points;
         std::vector<std::pair<Point<T>, int>> right_points;
@@ -278,6 +285,8 @@ private:
                 }
             }
         }
+
+        // std::cout << "left" << left_points.size() << " right " << right_points.size() << std::endl;
 
         // Handle potential empty subsets by enforcing the bounding box split
 
@@ -327,6 +336,7 @@ private:
     // Can I make the underlying storage here an eigen vector, and then just push it through the NB calculation? Or maybe even populate it with points and the corresponding NB beforehand? -> Take the two Eigen vectors, calculate the NB, and then pop the points with (x, y, nb_x, nb_y)
 
     double calculate_p_xy(int count, double bin_area) const {
+        // std::cout << count << " " << total_count << " " << bin_area << std::endl;
         return static_cast<double>(count) / (static_cast<double>(total_count) * bin_area);
     }
 
@@ -388,6 +398,10 @@ KDTree<int>::KDTree(const std::vector<Point<int>>& points, Copula<int> * copula,
     total_count = points.size();
 
     std::vector<std::pair<Point<int>, int>> unique_points = count_duplicates_unordered(points);
+
+    // for (auto p : unique_points) {
+        // std::cout << p.first.x << " " << p.first.y << " " << p.second << std::endl;
+    // }
 
     // These are the boundaries of the input data that then get mapped to [0, 1, 0, 1] when transformed via the CDF
 

@@ -37,9 +37,9 @@ public:
 
     MutualInformation(std::vector<std::pair<Point<int>, int>>& data, int nPoints, Bounds<int> bounds, int max_points_per_leaf);
 
-    // Strictly speaking, this is not necessary, but is nice for a comparison
     void setNormalCopula(double mean1, double std_dev1, double mean2, double std_dev2)
     {
+        this->copula->name = "NORMAL";
         setNormalPMF(mean1, std_dev1, mean2, std_dev2);
         setNormalCDF(mean1, std_dev1, mean2, std_dev2);
         setNormalICDF(mean1, std_dev1, mean2, std_dev2);
@@ -47,6 +47,7 @@ public:
 
     void setUniformCopula()
     {
+        this->copula->name = "UNIFORM";
         this->copula->p_x = [](double x) -> double { return 1.0; };
         this->copula->p_y = [](double y) -> double { return 1.0; };
         this->copula->cdf_x = [](double x) -> double { return x; };
@@ -87,18 +88,21 @@ public:
 
     void setPDF(DistributionFunctions<T>::pdf_f pdf_x, DistributionFunctions<T>::pdf_f pdf_y)
     {
+        this->copula->name = "CUSTOM";
         this->copula->pdf_x = pdf_x;
         this->copula->pdf_y = pdf_y;
     }
 
     void setCDF(DistributionFunctions<T>::cdf_f cdf_x, DistributionFunctions<T>::cdf_f cdf_y)
     {
+        this->copula->name = "CUSTOM";
         this->copula->cdf_x = cdf_x;
         this->copula->cdf_y = cdf_y;
     }
 
     void setICDF(DistributionFunctions<T>::icdf_f icdf_x, DistributionFunctions<T>::icdf_f icdf_y)
     {
+        this->copula->name = "CUSTOM";
         this->copula->icdf_x = icdf_x;
         this->copula->icdf_y = icdf_y;
     }
@@ -140,8 +144,9 @@ double mutual_information(std::vector<Point<T>> & data, int min_pop = 25)
 template <typename T>
 double mutual_information_normal(double mean1, double std_dev1, double mean2, double std_dev2, std::vector<Point<T>> & data, int min_pop = 25)
 {
+
     MutualInformation<T> mi(data, min_pop);
-    mi.setNormalCDF(mean1, std_dev1, mean2, std_dev2);
+    mi.setNormalCopula(mean1, std_dev1, mean2, std_dev2);
 
     return mi.mutual_information();
 
@@ -218,7 +223,7 @@ double mutual_information_quantised(double mean1, double std_dev1, double mean2,
     return mutual_information_normal(mean1, std_dev1, mean2, std_dev2, point_samples, min_pop);
 }
 
-double mutual_information_quantised(double mean1, double std_dev1, double mean2, double std_dev2, Eigen::VectorXd & data1, Eigen::VectorXd data2,  int min_pop = 25)
+double mutual_information_quantised(double mean1, double std_dev1, double mean2, double std_dev2, Eigen::VectorXd & data1, Eigen::VectorXd data2, int min_pop = 25)
 {
 
     std::vector<Point<int>> point_samples = convertSamplesToPointsQuantised(data1, data2);
@@ -296,7 +301,7 @@ Eigen::MatrixXd mutual_information_rle(Eigen::MatrixXi & samples, Eigen::VectorX
     for (int i = 0; i < samples.cols(); i++) {
         for (int j = i + 1; j < samples.cols(); j++) {
 
-            double mi = mutual_information_quantised_rle(means(i), std_devs(i), means(j), std_devs(j), rle[i], rle[j], samples.rows());
+            double mi = mutual_information_quantised_rle(means(i), std_devs(i), means(j), std_devs(j), rle[i], rle[j], samples.rows()), min_pop;
 
             results(i, j) = mi;
         }
@@ -325,7 +330,7 @@ Eigen::MatrixXd mutual_information_nb_rle(Eigen::MatrixXi & samples, Eigen::Vect
     for (int i = 0; i < samples.cols(); i++) {
         for (int j = i + 1; j < samples.cols(); j++) {
 
-            double mi = mutual_information_nb_quantised_rle(means(i), concentrations(i), means(j), concentrations(j), rle[i], rle[j], samples.rows());
+            double mi = mutual_information_nb_quantised_rle(means(i), concentrations(i), means(j), concentrations(j), rle[i], rle[j], samples.rows(), min_pop);
 
             results(i, j) = mi;
         }
@@ -346,9 +351,9 @@ Eigen::MatrixXd mutual_information_normal(Eigen::MatrixXd& samples, Eigen::Vecto
             Eigen::VectorXd f1 = samples.col(i);
             Eigen::VectorXd f2 = samples.col(j);
 
-            // results(i, j) = mutual_information_quantised(means(i), std_devs(i), means(j), std_devs(j), f1, f2, samples.rows());
+            // results(i, j) = mutual_information_quantised(means(i), std_devs(i), means(j), std_devs(j), f1, f2, min_pop);
 
-            results(i, j) = mutual_information_normal(means(i), std_devs(i), means(j), std_devs(j), f1, f2);
+            results(i, j) = mutual_information_normal(means(i), std_devs(i), means(j), std_devs(j), f1, f2, min_pop);
 
         }
     }

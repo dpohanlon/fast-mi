@@ -313,7 +313,6 @@ Bounds<T>::Bounds(T min_x, T max_x, T min_y, T max_y) : min_x(min_x), max_x(max_
 template <typename T>
 Bounds<T> get_bounds(const std::vector<Point<T>>& points) {
   if (points.empty()) {
-    // Handle empty case, e.g., return default values or throw an exception.
     return Bounds<T>();
   }
 
@@ -325,18 +324,17 @@ Bounds<T> get_bounds(const std::vector<Point<T>>& points) {
   Bounds<T> bounds;
 
   for (const auto& point : points) {
-    bounds.min_x = std::min(min_x, point.x);
-    bounds.max_x = std::max(max_x, point.x);
-    bounds.min_y = std::min(min_y, point.y);
-    bounds.max_y = std::max(max_y, point.y);
+    min_x = std::min(min_x, point.x);
+    max_x = std::max(max_x, point.x);
+    min_y = std::min(min_y, point.y);
+    max_y = std::max(max_y, point.y);
   }
 
-  return bounds;
+  return Bounds<T>(min_x, max_x, min_y, max_y);
 }
 
 Bounds<int> get_bounds(const std::vector<std::pair<Point<int>, int>>& points) {
   if (points.empty()) {
-    // Handle empty case as needed; here we return a default-constructed Bounds.
     return Bounds<int>();
   }
 

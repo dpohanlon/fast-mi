@@ -166,14 +166,18 @@ int main()
 
     Eigen::VectorXd std_dev = variance.array().sqrt();
 
-    double mi_2d = mutual_information_normal(mean(0), std_dev(0), mean(1), std_dev(1), f1, f2);
+    // double mi_2d = mutual_information_normal(mean(0), std_dev(0), mean(1), std_dev(1), f1, f2);
 
-    std::cout << "MI " << mi_2d << std::endl;
+    // std::cout << "MI " << mi_2d << std::endl;
+
+    double mi_2dq = mutual_information_quantised(mean(0), std_dev(0), mean(1), std_dev(1), f1, f2);
+
+    std::cout << "MI Q " << mi_2dq << std::endl;
 
     // Standard multi-dimensional
-    Eigen::MatrixXd mi_nd = mutual_information_normal(samples, mean, std_dev);
+    // Eigen::MatrixXd mi_nd = mutual_information_normal(samples, mean, std_dev);
 
-    std::cout << "MI" << mi_nd << std::endl;
+    // std::cout << "MI ND" << mi_nd << std::endl;
 
     // RLE multi-dimensional
 

@@ -1,28 +1,29 @@
 #pragma once
 
-#include <random>
-#include <chrono>
-#include <iostream>
-#include <cmath>
-#include <stdexcept>
-#include <limits>
-
-#include <boost/math/distributions/normal.hpp>
 #include <Eigen/Dense>
+#include <boost/math/distributions/normal.hpp>
+#include <chrono>
+#include <cmath>
+#include <iostream>
+#include <limits>
+#include <random>
+#include <stdexcept>
 
 /**
- * @brief Converts a correlation matrix and a vector of variances to a covariance matrix.
+ * @brief Converts a correlation matrix and a vector of variances to a
+ * covariance matrix.
  *
- * @param correlationMatrix The correlation matrix (n x n), must be symmetric with 1s on the diagonal.
+ * @param correlationMatrix The correlation matrix (n x n), must be symmetric
+ * with 1s on the diagonal.
  * @param variances        The vector of variances (size n).
  * @return Eigen::MatrixXd   The resulting covariance matrix (n x n).
  *
- * @throws std::invalid_argument If the correlation matrix is not square or if its size does not match the variances vector.
+ * @throws std::invalid_argument If the correlation matrix is not square or if
+ * its size does not match the variances vector.
  */
 Eigen::MatrixXd correlationToCovariance(
     const Eigen::MatrixXd& correlationMatrix,
-    const Eigen::VectorXd& variances)
-{
+    const Eigen::VectorXd& variances) {
     // Ensure the correlation matrix is square
     if (correlationMatrix.rows() != correlationMatrix.cols()) {
         throw std::invalid_argument("Correlation matrix must be square.");
@@ -30,7 +31,9 @@ Eigen::MatrixXd correlationToCovariance(
 
     // Ensure the size of variances matches the correlation matrix
     if (correlationMatrix.rows() != variances.size()) {
-        throw std::invalid_argument("Size of variances vector must match the correlation matrix dimensions.");
+        throw std::invalid_argument(
+            "Size of variances vector must match the correlation matrix "
+            "dimensions.");
     }
 
     // Compute standard deviations by taking the square root of variances
@@ -46,7 +49,8 @@ Eigen::MatrixXd correlationToCovariance(
 }
 
 /**
- * @brief Computes the Probability Density Function (PDF) of a univariate normal distribution.
+ * @brief Computes the Probability Density Function (PDF) of a univariate normal
+ * distribution.
  *
  * @param x     The point at which to evaluate the PDF.
  * @param mean  The mean (\mu) of the distribution.
@@ -56,7 +60,6 @@ Eigen::MatrixXd correlationToCovariance(
  * @throws std::invalid_argument If the standard deviation is non-positive.
  */
 double normal_pdf(double x, double mean, double stddev) {
-
     if (stddev <= 0.0) {
         throw std::invalid_argument("Standard deviation must be positive.");
     }
@@ -67,7 +70,6 @@ double normal_pdf(double x, double mean, double stddev) {
 
 // Cumulative Distribution Function (CDF) of the normal distribution
 double normal_cdf(double x, double mean, double stddev) {
-
     // std::cout << "CDF " << x << " " << mean << " " << stddev << std::endl;
 
     if (stddev <= 0.0) {
@@ -78,9 +80,9 @@ double normal_cdf(double x, double mean, double stddev) {
     return boost::math::cdf(dist, x);
 }
 
-// Inverse Cumulative Distribution Function (Inverse CDF) or Quantile Function of the normal distribution
+// Inverse Cumulative Distribution Function (Inverse CDF) or Quantile Function
+// of the normal distribution
 double normal_icdf(double p, double mean, double stddev) {
-
     // std::cout << "ICDF " << p << " " << mean << " " << stddev << std::endl;
 
     if (stddev <= 0.0) {
@@ -102,18 +104,18 @@ double normal_icdf(double p, double mean, double stddev) {
  * \param num_samples The number of samples to draw.
  * \return A matrix of size (n x num_samples). Each column is one sample.
  */
-Eigen::MatrixXd sampleMultivariateNormal(
-    const Eigen::VectorXd& mean,
-    const Eigen::MatrixXd& cov,
-    int num_samples)
-{
+Eigen::MatrixXd sampleMultivariateNormal(const Eigen::VectorXd& mean,
+                                         const Eigen::MatrixXd& cov,
+                                         int num_samples) {
     // Dimension of the distribution
     const int n = static_cast<int>(mean.size());
 
     // 1) Cholesky decomposition of the covariance matrix
     Eigen::LLT<Eigen::MatrixXd> lltOfCov(cov);
     if (lltOfCov.info() == Eigen::NumericalIssue) {
-        throw std::runtime_error("Cholesky decomposition failed (covariance not positive definite?)");
+        throw std::runtime_error(
+            "Cholesky decomposition failed (covariance not positive "
+            "definite?)");
     }
     Eigen::MatrixXd L = lltOfCov.matrixL();  // L is lower-triangular
 

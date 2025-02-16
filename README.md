@@ -16,8 +16,6 @@ from fast_mutual_information import mi_normal
 mean1, std_dev1 = 0.0, 1.0
 mean2, std_dev2 = 0.0, 1.0
 
-data = np.random.normal(0, 1, (1000, 2)).astype(np.int32)
-
 # data: an (Nsamples, 2) array
 mi = mi_normal(mean1, std_dev1, mean2, std_dev2, data)
 ```
@@ -104,12 +102,14 @@ sudo apt-get install libeigen3-dev
 
 ```
 
-To checkout the repository, as well as the PyBind11 submodule:
+This package also requires the [fast_negative_binomial](https://github.com/dpohanlon/fast_mi) package, which by default is included as a submodule.
+
+To checkout the repository, as well as the PyBind11 and FastNB submodule:
 
 ``` bash
 
 git clone --recurse-submodules git@github.com:dpohanlon/fast_mi.git
-cd fast_nb
+cd fast_mi
 ```
 
 C++

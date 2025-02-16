@@ -1,22 +1,16 @@
 #pragma once
 
-#include <vector>
-#include <cmath>
-#include <numeric>
-
-#include <iostream>
-#include <vector>
 #include <algorithm>
-#include <memory>
-#include <cmath>
-#include <limits>
-#include <unordered_map>
-#include <functional>
-
 #include <boost/sort/sort.hpp>
 #include <boost/sort/spreadsort/spreadsort.hpp>
-
-// #include "absl/container/flat_hash_map.h"
+#include <cmath>
+#include <functional>
+#include <iostream>
+#include <limits>
+#include <memory>
+#include <numeric>
+#include <unordered_map>
+#include <vector>
 
 #include "copula.hpp"
 #include "point.hpp"
@@ -24,14 +18,13 @@
 
 template <typename T>
 struct KDNode {
-
     // Use bounds struct here
     Bounds<T> bounds;
 
     std::vector<std::pair<Point<T>, int>> points;
 
     bool is_leaf;
-    int split_dim; // 0 for x, 1 for y
+    int split_dim;  // 0 for x, 1 for y
     T split_val;
 
     std::unique_ptr<KDNode> left;
@@ -41,43 +34,38 @@ struct KDNode {
         bounds = {INT_MAX, INT_MIN, INT_MAX, INT_MIN};
     }
 
-    T get_width(void) const {
-        return bounds.max_x - bounds.min_x;
-    }
+    T get_width(void) const { return bounds.max_x - bounds.min_x; }
 
-    T get_height(void) const {
-        return bounds.max_y - bounds.min_y;
-    }
+    T get_height(void) const { return bounds.max_y - bounds.min_y; }
 
     int total_counts(void) const;
 
     double get_bin_area(void) const {
         return this->get_width() * this->get_height();
     }
-
 };
 
-namespace std {
-    template <>
-    struct hash<Point<int>> {
-        std::size_t operator()(const Point<int>& p) const {
-            auto h1 = std::hash<int>()(p.x);
-            auto h2 = std::hash<int>()(p.y);
-            // Combine the two hash values.
-            return h1 ^ (h2 + 0x9e3779b97f4a7c15ULL + (h1 << 6) + (h1 >> 2));
-        }
-    };
+template <>
+int KDNode<int>::get_width(void) const {
+    return std::max(1, bounds.max_x - bounds.min_x);
+}
+
+template <>
+int KDNode<int>::get_height(void) const {
+    return std::max(1, bounds.max_y - bounds.min_y);
 }
 
 template <typename T>
 int KDNode<T>::total_counts(void) const {
-    // Here we assume that the points are unique, the second element of the pair is 1
+    // Here we assume that the points are unique, the second element of the pair
+    // is 1
     return this->points.size();
 }
 
 template <>
 int KDNode<int>::total_counts(void) const {
-    // Here we assume that the points are maybe not unique, and the second element of the pair could be greater than 1
+    // Here we assume that the points are maybe not unique, and the second
+    // element of the pair could be greater than 1
     int count = 0;
     for (auto p : this->points) {
         count += p.second;
@@ -86,17 +74,28 @@ int KDNode<int>::total_counts(void) const {
     return count;
 }
 
-
+namespace std {
+template <>
+struct hash<Point<int>> {
+    std::size_t operator()(const Point<int>& p) const {
+        auto h1 = std::hash<int>()(p.x);
+        auto h2 = std::hash<int>()(p.y);
+        // Combine the two hash values.
+        return h1 ^ (h2 + 0x9e3779b97f4a7c15ULL + (h1 << 6) + (h1 >> 2));
+    }
+};
+}  // namespace std
 
 template <typename T>
 class KDTree {
-public:
-
+   public:
     KDTree() {}
 
-    KDTree(const std::vector<Point<T>>& points, Copula<T> * copula, int max_points_per_leaf = 10);
+    KDTree(const std::vector<Point<T>>& points, Copula<T>* copula,
+           int max_points_per_leaf = 10);
 
-    KDTree( std::vector<std::pair<Point<int>, int>> & unique_points, int nPoints, Bounds<int> bounds, Copula<int> * copula, int max_points_per_leaf);
+    KDTree(std::vector<std::pair<Point<int>, int>>& unique_points, int nPoints,
+           Bounds<int> bounds, Copula<int>* copula, int max_points_per_leaf);
 
     double get_correction() const {
         int depth = get_tree_depth();
@@ -128,43 +127,21 @@ public:
         return 1 + std::max(left_depth, right_depth);
     }
 
-    int get_tree_depth() const {
-        return calculate_depth(root.get());
-    }
+    int get_tree_depth() const { return calculate_depth(root.get()); }
 
-private:
+   private:
     std::unique_ptr<KDNode<T>> root;
     int max_points;
     int total_count;
 
-    Copula<T> * copula;
+    Copula<T>* copula;
 
-    double get_bin_area(const KDNode<T> & node) const;
+    double get_bin_area(const KDNode<T>& node) const;
 
     // For ints this can be optimised by sorting!
 
-    // std::vector<std::pair<Point<int>, int>> count_duplicates_absl(const std::vector<Point<int>>& points) {
-
-    //     absl::flat_hash_map<std::pair<int, int>, int, absl::Hash<std::pair<int, int>>> point_map;
-
-    //     point_map.reserve(points.size() / 2);
-
-    //     for (const auto& pt : points) {
-    //         std::pair<int, int> key = {pt.x, pt.y};
-    //         point_map[key]++;
-    //     }
-
-    //     std::vector<std::pair<Point<int>, int>> unique_points;
-    //     unique_points.reserve(point_map.size());
-
-    //     for (const auto& entry : point_map) {
-    //         unique_points.emplace_back(std::make_pair(Point<T>{entry.first.first, entry.first.second}, entry.second));
-    //     }
-
-    //     return unique_points;
-    // }
-
-    std::vector<std::pair<Point<int>, int>> count_duplicates_unordered(const std::vector<Point<int>>& points) {
+    std::vector<std::pair<Point<int>, int>> count_duplicates_unordered(
+        const std::vector<Point<int>>& points) {
         std::unordered_map<Point<int>, int> counts;
         for (const auto& pt : points) {
             ++counts[pt];
@@ -179,37 +156,42 @@ private:
         // These will be sorted when splitting anyway
 
         // To match the lexicographical order from the sorting version.
-        // std::sort(result.begin(), result.end(), [](const auto& a, const auto& b) {
+        // std::sort(result.begin(), result.end(), [](const auto& a, const auto&
+        // b) {
         //     return a.first < b.first;
         // });
 
         return result;
     }
 
-    std::vector<std::pair<Point<int>, int>> count_duplicates_sorted(const std::vector<Point<int>>& points) {
+    std::vector<std::pair<Point<int>, int>> count_duplicates_sorted(
+        const std::vector<Point<int>>& points) {
         if (points.empty()) return {};
 
         auto sorted_points = points;
 
-        std::sort(sorted_points.begin(), sorted_points.end(), [](const Point<int>& a, const Point<int>& b) {
-            return (a.x < b.x) || ((a.x == b.x) && (a.y < b.y));
-        });
+        std::sort(sorted_points.begin(), sorted_points.end(),
+                  [](const Point<int>& a, const Point<int>& b) {
+                      return (a.x < b.x) || ((a.x == b.x) && (a.y < b.y));
+                  });
 
-        // std::stable_sort(sorted_points.begin(), sorted_points.end(), [](const Point<int>& a, const Point<int>& b) {
+        // std::stable_sort(sorted_points.begin(), sorted_points.end(), [](const
+        // Point<int>& a, const Point<int>& b) {
         //     if (a.x != b.x)
         //         return a.x < b.x;
         //     return a.y < b.y;
         // });
 
-        // boost::sort::spreadsort::integer_sort(sorted_points.begin(), sorted_points.end(),
+        // boost::sort::spreadsort::integer_sort(sorted_points.begin(),
+        // sorted_points.end(),
         //                                      boost::sort::spreadsort::integer_traits<Point<int>>::base());
-
 
         std::vector<std::pair<Point<int>, int>> result;
         Point<int> current = sorted_points[0];
         int count = 1;
         for (std::size_t i = 1; i < sorted_points.size(); ++i) {
-            if (sorted_points[i].x == current.x && sorted_points[i].y == current.y) {
+            if (sorted_points[i].x == current.x &&
+                sorted_points[i].y == current.y) {
                 ++count;
             } else {
                 result.emplace_back(current, count);
@@ -221,17 +203,20 @@ private:
         return result;
     }
 
-
-    std::unique_ptr<KDNode<T>> build(std::vector<std::pair<Point<T>, int>>& points,
-                                  int depth, Bounds<T> bounds) {
-
+    std::unique_ptr<KDNode<T>> build(
+        std::vector<std::pair<Point<T>, int>>& points, int depth,
+        Bounds<T> bounds) {
         auto node = std::make_unique<KDNode<T>>();
         node->bounds = bounds;
 
-        bool degenerate_split = (bounds.max_x - bounds.min_x < 1E-8) || (bounds.max_y - bounds.min_y < 1E-8);
+        bool degenerate_split = (bounds.max_x - bounds.min_x < 1E-8) ||
+                                (bounds.max_y - bounds.min_y < 1E-8);
 
-        // This is controlled by the number of points rather than the number of points including the duplicates as we don't want to end up with nowhere to split
-        if (points.size() <= static_cast<size_t>(max_points) || degenerate_split) {
+        // This is controlled by the number of points rather than the number of
+        // points including the duplicates as we don't want to end up with
+        // nowhere to split
+        if (points.size() <= static_cast<size_t>(max_points) ||
+            degenerate_split) {
             node->is_leaf = true;
             node->points = points;
             return node;
@@ -241,17 +226,20 @@ private:
         node->split_dim = axis;
 
         if (axis == 0) {
-            std::nth_element(points.begin(), points.begin() + points.size() / 2, points.end(),
-                      [](const std::pair<Point<T>, int>& a, const std::pair<Point<T>, int>& b) -> bool {
-                          return a.first.x < b.first.x;
-                      });
+            std::nth_element(points.begin(), points.begin() + points.size() / 2,
+                             points.end(),
+                             [](const std::pair<Point<T>, int>& a,
+                                const std::pair<Point<T>, int>& b) -> bool {
+                                 return a.first.x < b.first.x;
+                             });
         } else {
-            std::nth_element(points.begin(), points.begin() + points.size() / 2, points.end(),
-                      [](const std::pair<Point<T>, int>& a, const std::pair<Point<T>, int>& b) -> bool {
-                          return a.first.y < b.first.y;
-                      });
+            std::nth_element(points.begin(), points.begin() + points.size() / 2,
+                             points.end(),
+                             [](const std::pair<Point<T>, int>& a,
+                                const std::pair<Point<T>, int>& b) -> bool {
+                                 return a.first.y < b.first.y;
+                             });
         }
-
 
         size_t median_idx = points.size() / 2;
         T median_val = (axis == 0) ? points[median_idx].first.x
@@ -262,7 +250,7 @@ private:
         std::vector<std::pair<Point<T>, int>> right_points;
 
         for (const auto& p : points) {
-            int coord = (axis == 0) ? p.first.x : p.first.y;
+            T coord = (axis == 0) ? p.first.x : p.first.y;
             if (coord < median_val) {
                 left_points.emplace_back(p);
             } else if (coord > median_val) {
@@ -284,8 +272,9 @@ private:
         left_bounds.min_y = bounds.min_y;
         left_bounds.max_y = (axis == 1 ? median_val : bounds.max_y);
 
+        // left_bounds not bounds?
         if (!left_points.empty()) {
-            node->left = build(left_points, depth + 1, bounds);
+            node->left = build(left_points, depth + 1, left_bounds);
         } else {
             auto leaf = std::make_unique<KDNode<T>>();
             leaf->is_leaf = true;
@@ -299,8 +288,9 @@ private:
         right_bounds.min_y = (axis == 1 ? median_val : bounds.min_y);
         right_bounds.max_y = bounds.max_y;
 
+        // right_bounds not bounds?
         if (!right_points.empty()) {
-            node->right = build(right_points, depth + 1, bounds);
+            node->right = build(right_points, depth + 1, right_bounds);
         } else {
             auto leaf = std::make_unique<KDNode<T>>();
             leaf->is_leaf = true;
@@ -316,20 +306,25 @@ private:
         if (node->is_leaf) {
             return node->total_counts();
         }
-        return compute_total_count(node->left.get()) + compute_total_count(node->right.get());
+        return compute_total_count(node->left.get()) +
+               compute_total_count(node->right.get());
     }
 
-    // Can I make the underlying storage here an eigen vector, and then just push it through the NB calculation? Or maybe even populate it with points and the corresponding NB beforehand? -> Take the two Eigen vectors, calculate the NB, and then pop the points with (x, y, nb_x, nb_y)
+    // Can I make the underlying storage here an eigen vector, and then just
+    // push it through the NB calculation? Or maybe even populate it with points
+    // and the corresponding NB beforehand? -> Take the two Eigen vectors,
+    // calculate the NB, and then pop the points with (x, y, nb_x, nb_y)
 
     double calculate_p_xy(int count, double bin_area) const {
-        return static_cast<double>(count) / (static_cast<double>(total_count) * bin_area);
+        return static_cast<double>(count) /
+               (static_cast<double>(total_count) * bin_area);
     }
 
-    void traverse_and_compute(const KDNode<T>* node, double& mi, double &area) const {
+    void traverse_and_compute(const KDNode<T>* node, double& mi,
+                              double& area) const {
         if (!node) return;
 
         if (node->is_leaf) {
-
             int bin_count = node->total_counts();
 
             double bin_area = this->get_bin_area(*node);
@@ -351,9 +346,9 @@ private:
 };
 
 template <typename T>
-KDTree<T>::KDTree(const std::vector<Point<T>>& points, Copula<T> * copula, int max_points_per_leaf)
+KDTree<T>::KDTree(const std::vector<Point<T>>& points, Copula<T>* copula,
+                  int max_points_per_leaf)
     : max_points(max_points_per_leaf), copula(copula) {
-
     total_count = points.size();
 
     std::vector<std::pair<Point<T>, int>> unique_points;
@@ -362,7 +357,8 @@ KDTree<T>::KDTree(const std::vector<Point<T>>& points, Copula<T> * copula, int m
         unique_points.push_back(std::make_pair(points[i], 1));
     }
 
-    // These are the boundaries of the unit square for assumed U[0, 1] if passed anything other than ints
+    // These are the boundaries of the unit square for assumed U[0, 1] if passed
+    // anything other than ints
 
     Bounds<T> bounds = {0.0, 1.0, 0.0, 1.0};
 
@@ -370,36 +366,39 @@ KDTree<T>::KDTree(const std::vector<Point<T>>& points, Copula<T> * copula, int m
 }
 
 template <>
-KDTree<int>::KDTree(const std::vector<Point<int>>& points, Copula<int> * copula, int max_points_per_leaf)
+KDTree<int>::KDTree(const std::vector<Point<int>>& points, Copula<int>* copula,
+                    int max_points_per_leaf)
     : max_points(max_points_per_leaf), copula(copula) {
-
     total_count = points.size();
 
-    std::vector<std::pair<Point<int>, int>> unique_points = count_duplicates_unordered(points);
+    std::vector<std::pair<Point<int>, int>> unique_points =
+        count_duplicates_unordered(points);
 
-    // These are the boundaries of the input data that then get mapped to [0, 1, 0, 1] when transformed via the CDF
+    // These are the boundaries of the input data that then get mapped to [0, 1,
+    // 0, 1] when transformed via the CDF
 
     Bounds<int> bounds = get_bounds(points);
 
     root = build(unique_points, 0, bounds);
 }
 
-// For pre-calculated duplicates on RLE vectors - would be nice to make this const, but then it has to be sorted
+// For pre-calculated duplicates on RLE vectors - would be nice to make this
+// const, but then it has to be sorted
 template <>
-KDTree<int>::KDTree( std::vector<std::pair<Point<int>, int>> & unique_points, int nPoints, Bounds<int> bounds, Copula<int> * copula, int max_points_per_leaf)
+KDTree<int>::KDTree(std::vector<std::pair<Point<int>, int>>& unique_points,
+                    int nPoints, Bounds<int> bounds, Copula<int>* copula,
+                    int max_points_per_leaf)
     : max_points(max_points_per_leaf), copula(copula) {
-
     root = build(unique_points, 0, bounds);
 }
 
 template <typename T>
-double KDTree<T>::get_bin_area(const KDNode<T> & node) const {
+double KDTree<T>::get_bin_area(const KDNode<T>& node) const {
     return node.get_bin_area();
 }
 
 template <>
-double KDTree<int>::get_bin_area(const KDNode<int> & node) const {
-
+double KDTree<int>::get_bin_area(const KDNode<int>& node) const {
     // Transform to the uniform distribution via the CDF, to get
     // the area in U[0, 1] space
 
@@ -413,5 +412,4 @@ double KDTree<int>::get_bin_area(const KDNode<int> & node) const {
     double height = y_max - y_min;
 
     return width * height;
-
 }

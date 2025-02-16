@@ -1,16 +1,15 @@
 #pragma once
 
-#include <functional>
-
 #include <omp.h>
 
 #include <Eigen/Dense>
-#include "fast_negative_binomial/fast_nb.hpp"
+#include <functional>
 
-#include "utils.hpp"
-#include "mvn.hpp"
-#include "kdtree.hpp"
 #include "copula.hpp"
+#include "fast_negative_binomial/fast_nb.hpp"
+#include "kdtree.hpp"
+#include "mvn.hpp"
+#include "utils.hpp"
 
 // Set up with a class, configure, then run MI calculation
 // TODO: Take Eigen vectors of means and variances
@@ -18,35 +17,29 @@
 
 template <typename T>
 class MutualInformation {
-public:
+   public:
+    MutualInformation() { this->copula = new Copula<T>(); }
 
-    MutualInformation() {
-        this->copula = new Copula<T>();
-    }
+    ~MutualInformation() { delete this->copula; }
 
-    ~MutualInformation() {
-        delete this->copula;
-    }
-
-    MutualInformation(std::vector<Point<T>> & data, int min_pop = 10) {
-
+    MutualInformation(std::vector<Point<T>>& data, int min_pop = 10) {
         this->copula = new Copula<T>();
         this->setData(data, min_pop);
-
     }
 
-    MutualInformation(std::vector<std::pair<Point<int>, int>>& data, int nPoints, Bounds<int> bounds, int max_points_per_leaf);
+    MutualInformation(std::vector<std::pair<Point<int>, int>>& data,
+                      int nPoints, Bounds<int> bounds, int max_points_per_leaf);
 
-    // Strictly speaking, this is not necessary, but is nice for a comparison
-    void setNormalCopula(double mean1, double std_dev1, double mean2, double std_dev2)
-    {
+    void setNormalCopula(double mean1, double std_dev1, double mean2,
+                         double std_dev2) {
+        this->copula->name = "NORMAL";
         setNormalPMF(mean1, std_dev1, mean2, std_dev2);
         setNormalCDF(mean1, std_dev1, mean2, std_dev2);
         setNormalICDF(mean1, std_dev1, mean2, std_dev2);
     }
 
-    void setUniformCopula()
-    {
+    void setUniformCopula() {
+        this->copula->name = "UNIFORM";
         this->copula->p_x = [](double x) -> double { return 1.0; };
         this->copula->p_y = [](double y) -> double { return 1.0; };
         this->copula->cdf_x = [](double x) -> double { return x; };
@@ -55,117 +48,132 @@ public:
         this->copula->icdf_y = [](double v) -> double { return v; };
     }
 
-    void setData(const std::vector<Point<T>> & data, int min_pop = 10)
-    {
+    void setData(const std::vector<Point<T>>& data, int min_pop = 10) {
         this->tree = KDTree<T>(data, this->copula, min_pop);
     }
 
-    void setData(std::vector<std::pair<Point<int>, int>> & data, int nPoints, Bounds<int> bounds, int min_pop = 10)
-    {
-
+    void setData(std::vector<std::pair<Point<int>, int>>& data, int nPoints,
+                 Bounds<int> bounds, int min_pop = 10) {
         // Use the RLE constructor
         this->tree = KDTree<T>(data, nPoints, bounds, this->copula, min_pop);
     }
 
-    void setNormalPMF(double mean1, double std_dev1, double mean2, double std_dev2)
-    {
-        this->copula->p_x = [=](double x) -> double { return normal_pdf(x, mean1, std_dev1); };
-        this->copula->p_y = [=](double y) -> double { return normal_pdf(y, mean2, std_dev2); };
+    void setNormalPMF(double mean1, double std_dev1, double mean2,
+                      double std_dev2) {
+        this->copula->p_x = [mean1, std_dev1](double x) -> double {
+            return normal_pdf(x, mean1, std_dev1);
+        };
+        this->copula->p_y = [mean2, std_dev2](double y) -> double {
+            return normal_pdf(y, mean2, std_dev2);
+        };
     }
 
-    void setNormalCDF(double mean1, double std_dev1, double mean2, double std_dev2)
-    {
-        this->copula->cdf_x = [=](double x) -> double { return normal_cdf(x, mean1, std_dev1); };
-        this->copula->cdf_y = [=](double y) -> double { return normal_cdf(y, mean2, std_dev2); };
+    void setNormalCDF(double mean1, double std_dev1, double mean2,
+                      double std_dev2) {
+        this->copula->cdf_x = [mean1, std_dev1](double x) -> double {
+            return normal_cdf(x, mean1, std_dev1);
+        };
+        this->copula->cdf_y = [mean2, std_dev2](double y) -> double {
+            return normal_cdf(y, mean2, std_dev2);
+        };
     }
 
-    void setNormalICDF(double mean1, double std_dev1, double mean2, double std_dev2)
-    {
-        this->copula->icdf_x = [=](double x) -> double { return normal_icdf(x, mean1, std_dev1); };
-        this->copula->icdf_y = [=](double y) -> double { return normal_icdf(y, mean2, std_dev2); };
+    void setNormalICDF(double mean1, double std_dev1, double mean2,
+                       double std_dev2) {
+        this->copula->icdf_x = [mean1, std_dev1](double x) -> double {
+            return normal_icdf(x, mean1, std_dev1);
+        };
+        this->copula->icdf_y = [mean2, std_dev2](double y) -> double {
+            return normal_icdf(y, mean2, std_dev2);
+        };
     }
 
-    void setPDF(DistributionFunctions<T>::pdf_f pdf_x, DistributionFunctions<T>::pdf_f pdf_y)
-    {
+    void setPDF(DistributionFunctions<T>::pdf_f pdf_x,
+                DistributionFunctions<T>::pdf_f pdf_y) {
+        this->copula->name = "CUSTOM";
         this->copula->pdf_x = pdf_x;
         this->copula->pdf_y = pdf_y;
     }
 
-    void setCDF(DistributionFunctions<T>::cdf_f cdf_x, DistributionFunctions<T>::cdf_f cdf_y)
-    {
+    void setCDF(DistributionFunctions<T>::cdf_f cdf_x,
+                DistributionFunctions<T>::cdf_f cdf_y) {
+        this->copula->name = "CUSTOM";
         this->copula->cdf_x = cdf_x;
         this->copula->cdf_y = cdf_y;
     }
 
-    void setICDF(DistributionFunctions<T>::icdf_f icdf_x, DistributionFunctions<T>::icdf_f icdf_y)
-    {
+    void setICDF(DistributionFunctions<T>::icdf_f icdf_x,
+                 DistributionFunctions<T>::icdf_f icdf_y) {
+        this->copula->name = "CUSTOM";
         this->copula->icdf_x = icdf_x;
         this->copula->icdf_y = icdf_y;
     }
 
-    double mutual_information()
-    {
+    double mutual_information() {
         // TODO: Check if copula funcs are not null (and that we are set up)
 
         return tree.compute_mutual_information();
-
     }
 
-private:
+   private:
     KDTree<T> tree;
-    Copula<T> * copula;
-
+    Copula<T>* copula;
 };
 
 template <>
-MutualInformation<int>::MutualInformation(std::vector<std::pair<Point<int>, int>>& data, int nPoints, Bounds<int> bounds, int max_points_per_leaf)
-{
+MutualInformation<int>::MutualInformation(
+    std::vector<std::pair<Point<int>, int>>& data, int nPoints,
+    Bounds<int> bounds, int max_points_per_leaf) {
     this->copula = new Copula<int>();
     this->setData(data, nPoints, bounds, max_points_per_leaf);
 }
 
-// Unqualified these correspond to uniform distributions, in both the raw and transformed spaces. Qualified, these have the kd-tree calculated in the raw space, but the MI calculated in the transformed space using the copula.
+// Unqualified these correspond to uniform distributions, in both the raw and
+// transformed spaces. Qualified, these have the kd-tree calculated in the raw
+// space, but the MI calculated in the transformed space using the copula.
 
 template <typename T>
-double mutual_information(std::vector<Point<T>> & data, int min_pop = 25)
-{
+double mutual_information(std::vector<Point<T>>& data, int min_pop = 25) {
     MutualInformation<T> mi(data, min_pop);
     mi.setUniformCopula();
 
     return mi.mutual_information();
-
 }
 
 // Pass normal parameters so the CDF can be calculated on the fly
 template <typename T>
-double mutual_information_normal(double mean1, double std_dev1, double mean2, double std_dev2, std::vector<Point<T>> & data, int min_pop = 25)
-{
+double mutual_information_normal(double mean1, double std_dev1, double mean2,
+                                 double std_dev2, std::vector<Point<T>>& data,
+                                 int min_pop = 25) {
     MutualInformation<T> mi(data, min_pop);
-    mi.setNormalCDF(mean1, std_dev1, mean2, std_dev2);
+    mi.setNormalCopula(mean1, std_dev1, mean2, std_dev2);
 
     return mi.mutual_information();
-
 }
 
-// Where the duplicate counting has already been done (e.g., from RLE representations)
-double mutual_information_normal(double mean1, double std_dev1, double mean2, double std_dev2, std::vector<std::pair<Point<int>, int>> & data, int nPoints, Bounds<int> bounds, int min_pop = 25)
-{
+// Where the duplicate counting has already been done (e.g., from RLE
+// representations)
+double mutual_information_normal(double mean1, double std_dev1, double mean2,
+                                 double std_dev2,
+                                 std::vector<std::pair<Point<int>, int>>& data,
+                                 int nPoints, Bounds<int> bounds,
+                                 int min_pop = 25) {
     MutualInformation<int> mi(data, nPoints, bounds, min_pop);
     mi.setNormalCDF(mean1, std_dev1, mean2, std_dev2);
 
     return mi.mutual_information();
-
 }
 
-double mutual_information_normal(Eigen::MatrixXd & data, int min_pop = 25)
-{
+double mutual_information_normal(Eigen::MatrixXd& data, int min_pop = 25) {
     std::vector<Point<double>> point_samples = convertSamplesToPoints(data);
 
     return mutual_information(point_samples, min_pop);
 }
 
-double mutual_information_normal(double mean1, double std_dev1, double mean2, double std_dev2, Eigen::MatrixXd & data, int min_pop = 25)
-{
+double mutual_information_normal(double mean1, double std_dev1, double mean2,
+                                 double std_dev2, Eigen::MatrixXd& data,
+                                 int min_pop = 25) {
+    // std::cout << "THIS ONE!?" << std::endl;
 
     Eigen::VectorXd mean(2);
     mean << mean1, mean2;
@@ -177,34 +185,73 @@ double mutual_information_normal(double mean1, double std_dev1, double mean2, do
 
     Eigen::MatrixXd uniform_samples = transformToUniform(data, mean, std_dev);
 
-    std::vector<Point<double>> point_samples = convertSamplesToPoints(uniform_samples);
+    std::vector<Point<double>> point_samples =
+        convertSamplesToPoints(uniform_samples);
+
+    // std::cout << point_samples.size() << std::endl;
+    // std::cout << point_samples[0].x << " " << point_samples[0].y <<
+    // std::endl;
 
     return mutual_information(point_samples, min_pop);
 }
 
-// TODO: Find a better way to integrate all of these parameters, particularly the total number of points and the overall bounds
-double mutual_information_quantised_rle(double mean1, double std_dev1, double mean2, double std_dev2, std::vector<std::pair<int, int>> rle1, std::vector<std::pair<int, int>> rle2, int nPoints, int min_pop = 25)
-{
+double mutual_information_normal(double mean1, double std_dev1, double mean2,
+                                 double std_dev2, Eigen::VectorXd& data1,
+                                 Eigen::VectorXd& data2, int min_pop = 25) {
+    Eigen::VectorXd uniform_samples1 =
+        transformToUniform(data1, mean1, std_dev1);
+    Eigen::VectorXd uniform_samples2 =
+        transformToUniform(data2, mean2, std_dev2);
 
-    std::vector<std::pair<Point<int>, int>> point_samples = runLengthDecoding(rle1, rle2);
+    std::vector<Point<double>> point_samples =
+        convertSamplesToPoints(uniform_samples1, uniform_samples2);
+
+    return mutual_information(point_samples, min_pop);
+}
+
+// TODO: Find a better way to integrate all of these parameters, particularly
+// the total number of points and the overall bounds
+double mutual_information_quantised_rle(double mean1, double std_dev1,
+                                        double mean2, double std_dev2,
+                                        std::vector<std::pair<int, int>> rle1,
+                                        std::vector<std::pair<int, int>> rle2,
+                                        int nPoints, int min_pop = 25) {
+    std::vector<std::pair<Point<int>, int>> point_samples =
+        runLengthDecoding(rle1, rle2);
 
     // A little inefficient, as we can cache these per feature separately
     Bounds<int> bounds = get_bounds(point_samples);
 
-    return mutual_information_normal(mean1, std_dev1, mean2, std_dev2, point_samples, nPoints, bounds, min_pop);
+    return mutual_information_normal(mean1, std_dev1, mean2, std_dev2,
+                                     point_samples, nPoints, bounds, min_pop);
 }
 
-double mutual_information_quantised(double mean1, double std_dev1, double mean2, double std_dev2, Eigen::MatrixXd & data, int min_pop = 25)
-{
+double mutual_information_quantised(double mean1, double std_dev1, double mean2,
+                                    double std_dev2, Eigen::MatrixXd& data,
+                                    int min_pop = 25) {
+    std::vector<Point<int>> point_samples =
+        convertSamplesToPointsQuantised(data);
 
-    std::vector<Point<int>> point_samples = convertSamplesToPointsQuantised(data);
+    return mutual_information_normal(mean1, std_dev1, mean2, std_dev2,
+                                     point_samples, min_pop);
+}
 
-    return mutual_information_normal(mean1, std_dev1, mean2, std_dev2, point_samples, min_pop);
+double mutual_information_quantised(double mean1, double std_dev1, double mean2,
+                                    double std_dev2, Eigen::VectorXd& data1,
+                                    Eigen::VectorXd data2, int min_pop = 25) {
+    std::vector<Point<int>> point_samples =
+        convertSamplesToPointsQuantised(data1, data2);
+
+    return mutual_information_normal(mean1, std_dev1, mean2, std_dev2,
+                                     point_samples, min_pop);
 }
 
 // Mutual information with NB distributed marginals
-double mutual_information_nb(double mean1, double conc1, double mean2, double conc2, std::vector<std::pair<Point<int>, int>> & data, int nPoints, Bounds<int> bounds, int min_pop = 10)
-{
+double mutual_information_nb(double mean1, double conc1, double mean2,
+                             double conc2,
+                             std::vector<std::pair<Point<int>, int>>& data,
+                             int nPoints, Bounds<int> bounds,
+                             int min_pop = 10) {
     auto cdf_x = [=](double x) -> double { return nb2_base(x, mean1, conc1); };
     auto cdf_y = [=](double y) -> double { return nb2_base(y, mean2, conc2); };
 
@@ -212,12 +259,12 @@ double mutual_information_nb(double mean1, double conc1, double mean2, double co
     mi.setCDF(cdf_x, cdf_y);
 
     return mi.mutual_information();
-
 }
 
 // Without RLE
-double mutual_information_nb(double mean1, double conc1, double mean2, double conc2, std::vector<Point<int>> & data, int min_pop = 10)
-{
+double mutual_information_nb(double mean1, double conc1, double mean2,
+                             double conc2, std::vector<Point<int>>& data,
+                             int min_pop = 10) {
     auto cdf_x = [=](double x) -> double { return nb2_base(x, mean1, conc1); };
     auto cdf_y = [=](double y) -> double { return nb2_base(y, mean2, conc2); };
 
@@ -225,53 +272,62 @@ double mutual_information_nb(double mean1, double conc1, double mean2, double co
     mi.setCDF(cdf_x, cdf_y);
 
     return mi.mutual_information();
-
 }
 
-double mutual_information_nb_quantised_rle(double mean1, double conc1, double mean2, double conc2, std::vector<std::pair<int, int>> rle1, std::vector<std::pair<int, int>> rle2, int nPoints, int min_pop = 25)
-{
-
-    std::vector<std::pair<Point<int>, int>> point_samples = runLengthDecoding(rle1, rle2);
+double mutual_information_nb_quantised_rle(
+    double mean1, double conc1, double mean2, double conc2,
+    std::vector<std::pair<int, int>> rle1,
+    std::vector<std::pair<int, int>> rle2, int nPoints, int min_pop = 25) {
+    std::vector<std::pair<Point<int>, int>> point_samples =
+        runLengthDecoding(rle1, rle2);
 
     // A little inefficient, as we can cache these per feature separately
     Bounds<int> bounds = get_bounds(point_samples);
 
-    return mutual_information_nb(mean1, conc1, mean2, conc2, point_samples, nPoints, bounds, min_pop);
+    return mutual_information_nb(mean1, conc1, mean2, conc2, point_samples,
+                                 nPoints, bounds, min_pop);
 }
 
 // Mutual information with NB distributed marginals
-double mutual_information_nb(double mean1, double conc1, double mean2, double conc2, Eigen::MatrixXd & data, int min_pop = 10)
-{
+double mutual_information_nb(double mean1, double conc1, double mean2,
+                             double conc2, Eigen::MatrixXd& data,
+                             int min_pop = 10) {
     // Real value input - quantise first
 
-    std::vector<Point<int>> point_samples = convertSamplesToPointsQuantised(data);
+    std::vector<Point<int>> point_samples =
+        convertSamplesToPointsQuantised(data);
 
-    return mutual_information_nb(mean1, conc1, mean2, conc2, point_samples, min_pop);
+    return mutual_information_nb(mean1, conc1, mean2, conc2, point_samples,
+                                 min_pop);
 }
 
 // TODO: Pass a struct of params rather that something explicit to clean this up
 
-Eigen::MatrixXd mutual_information_rle(Eigen::MatrixXi & samples, Eigen::VectorXd means, Eigen::VectorXd variances, int min_pop = 25)
-{
-
+Eigen::MatrixXd mutual_information_rle(Eigen::MatrixXi& samples,
+                                       Eigen::VectorXd means,
+                                       Eigen::VectorXd std_devs,
+                                       int min_pop = 25) {
     // Beware of types - integer matrix input
 
     std::vector<std::vector<std::pair<int, int>>> rle(samples.cols());
 
     Eigen::MatrixXd results(samples.cols(), samples.cols());
 
-    #pragma omp parallel for
+#pragma omp parallel for
     for (int i = 0; i < samples.cols(); i++) {
         rle[i] = runLengthEncoding(samples.col(i));
     }
 
-    // I don't *think* that the rle vectors are modified, but replace all of the downstream functions with const versions, to be sure
+    // I don't *think* that the rle vectors are modified, but replace all of the
+    // downstream functions with const versions, to be sure
 
-    #pragma omp parallel for
+#pragma omp parallel for
     for (int i = 0; i < samples.cols(); i++) {
         for (int j = i + 1; j < samples.cols(); j++) {
-
-            double mi = mutual_information_quantised_rle(means(i), std::sqrt(variances(i)), means(j), std::sqrt(variances(j)), rle[i], rle[j], samples.rows());
+            double mi = mutual_information_quantised_rle(
+                       means(i), std_devs(i), means(j), std_devs(j), rle[i],
+                       rle[j], samples.rows()),
+                   min_pop;
 
             results(i, j) = mi;
         }
@@ -280,29 +336,75 @@ Eigen::MatrixXd mutual_information_rle(Eigen::MatrixXi & samples, Eigen::VectorX
     return results;
 }
 
-Eigen::MatrixXd mutual_information_nb_rle(Eigen::MatrixXi & samples, Eigen::VectorXd means, Eigen::VectorXd concentrations, int min_pop = 25)
-{
-
+Eigen::MatrixXd mutual_information_nb_rle(Eigen::MatrixXi& samples,
+                                          Eigen::VectorXd means,
+                                          Eigen::VectorXd concentrations,
+                                          int min_pop = 25) {
     // Beware of types - integer matrix input
 
     std::vector<std::vector<std::pair<int, int>>> rle(samples.cols());
 
     Eigen::MatrixXd results(samples.cols(), samples.cols());
 
-    #pragma omp parallel for
+#pragma omp parallel for
     for (int i = 0; i < samples.cols(); i++) {
         rle[i] = runLengthEncoding(samples.col(i));
     }
 
-    // I don't *think* that the rle vectors are modified, but replace all of the downstream functions with const versions, to be sure
+    // I don't *think* that the rle vectors are modified, but replace all of the
+    // downstream functions with const versions, to be sure
 
-    #pragma omp parallel for
+#pragma omp parallel for
     for (int i = 0; i < samples.cols(); i++) {
         for (int j = i + 1; j < samples.cols(); j++) {
-
-            double mi = mutual_information_nb_quantised_rle(means(i), concentrations(i), means(j), concentrations(j), rle[i], rle[j], samples.rows());
+            double mi = mutual_information_nb_quantised_rle(
+                means(i), concentrations(i), means(j), concentrations(j),
+                rle[i], rle[j], samples.rows(), min_pop);
 
             results(i, j) = mi;
+        }
+    }
+
+    return results;
+}
+
+// I also want to take in an integer matrix - template it?
+Eigen::MatrixXd mutual_information_normal(Eigen::MatrixXd& samples,
+                                          Eigen::VectorXd means,
+                                          Eigen::VectorXd std_devs,
+                                          int min_pop = 25) {
+    Eigen::MatrixXd results(samples.cols(), samples.cols());
+
+#pragma omp parallel for
+    for (int i = 0; i < samples.cols(); i++) {
+        for (int j = i + 1; j < samples.cols(); j++) {
+            Eigen::VectorXd f1 = samples.col(i);
+            Eigen::VectorXd f2 = samples.col(j);
+
+            results(i, j) = mutual_information_normal(
+                means(i), std_devs(i), means(j), std_devs(j), f1, f2, min_pop);
+        }
+    }
+
+    return results;
+}
+
+Eigen::MatrixXd mutual_information_normal(Eigen::MatrixXi& samples,
+                                          Eigen::VectorXd means,
+                                          Eigen::VectorXd std_devs,
+                                          int min_pop = 25) {
+    Eigen::MatrixXd results(samples.cols(), samples.cols());
+
+#pragma omp parallel for
+    for (int i = 0; i < samples.cols(); i++) {
+        for (int j = i + 1; j < samples.cols(); j++) {
+            // Cast to double so we can use the same point quantisation class,
+            // even though these should be ints already
+            Eigen::VectorXd f1 = samples.col(i).cast<double>();
+            Eigen::VectorXd f2 = samples.col(j).cast<double>();
+
+            results(i, j) = mutual_information_quantised(
+                means(i), std_devs(i), means(j), std_devs(j), f1, f2, min_pop);
         }
     }
 

@@ -1,56 +1,61 @@
 # Fast pairwise mutual information calculation
 
-A fast pairwise mutual information calculation for Python and C++, optimised for small repeated integer counts such as those seen in single-cell RNA sequencing data.
+A fast pairwise mutual information calculation for Python and C++, optimised for small repeated integer counts such as those seen in single-cell RNA sequencing data. This used the copula method to combine normal or negative binomial marginal distributions and a kd-tree for density estimation.
 
 Usage
 =====
 
-In Python, two versions of the negative-binomial distribution are given, each of which accept either scalar or vector (e.g., `np.array`) of integer valued observations observations. The vector functions are parallelised using OpenMP, so be sure to set `OMP_NUM_THREADS` to a reasonable value.
+In Python, pairwise mutual information calculations are provided for both normal (`mi_normal`) and negative binomial (`mi_nb`) marginal distributions. These functions are overloaded to accept either scalar or vector (e.g., `np.array`) of floating point or integer valued observations. Several optimisations are provided for integer valued data, and these can be called using the quantised `*_q` versions of the functions.
+
+These functions have to be passed the parameters of the corresponding marginal distributions. For example, for the normal distribution:
+
+```python
+from fast_mutual_information import mi_normal
+
+# mean and standard-deviation for the two distributions
+mean1, std_dev1 = 0.0, 1.0
+mean2, std_dev2 = 0.0, 1.0
+
+data = np.random.normal(0, 1, (1000, 2)).astype(np.int32)
+
+# data: an (Nsamples, 2) array
+mi = mi_normal(mean1, std_dev1, mean2, std_dev2, data)
+```
+
+and for the negative binomial distribution (in the `nb2` parameterisation):
+
+```python
+
+from fast_mutual_information import mi_negative_binomial
+
+# means and concentrations for negative binomial marginals
+mean1, conc1 = 10, 10
+mean2, conc2 = 10, 10
+
+# data: an integer data array of shape (Nsamples, Nfeatures)
+mi_matrix = mi_negative_binomial(data, means, concentrations)
+
+```
+
+The vector functions take an `(N_samples, N_features)` array of data, and return an `(N_features, N_features)` matrix of mutual information values, of which only the upper triangular part is filled.
+
+```python
+from fast_mutual_information import mi_normal_q
+
+data = np.random.normal(0, 1, (1000, 2)).astype(np.int32)
+
+means = np.mean(data, axis=0)
+std_devs = np.std(data, axis=0)
+
+# data: an (Nsamples, 2) array (use the quantised version)
+mi = mi_normal_q(data, means, std_devs)
+```
+
+These are parallelised using OpenMP, so be sure to set `OMP_NUM_THREADS` to a reasonable value.
 
 ```bash
 export OMP_NUM_THREADS=4
 ```
-
-The first function is formulated as the number of failures `r`, and number of successes `k`, with probability of success `p`,
-
-$$ f(k;r,p) = \binom{k+r - 1}{k}(1 - p)^kp^r $$
-
-This is given by the function `fast_negative_binomial.negative_binomial`. This is a drop-in replacement of the `scipy.stats.nbinom.pmf` function.
-
-```python
-from fast_negative_binomial import negative_binomial
-
-p = 0.1
-r = 10
-ks = np.array([3, 7, 1, 0, 1])
-
-nb = negative_binomial(ks, r, p)
-```
-
-The second function is known as 'nb2' in statisical packages such as [NumPyro](https://num.pyro.ai/en/stable/distributions.html#negativebinomial2), and represents the distribution in terms of the mean of the `m` and concentration `r`, where
-
-$$ p = \frac{r}{r + m}$$
-
-This follows the same argument ordering as the NumPyro function (notably, reversing the last two arguments, with the same `r`),
-
-```python
-from fast_negative_binomial import negative_binomial2
-
-m = 10
-r = 10
-ks = np.array([3, 7, 1, 0, 1])
-
-nb = negative_binomial2(ks, m, r)
-```
-
-To avoid unncessary copies, these functions sort the vector of observations in place. If this is a problem, make a copy beforehand.
-
-Performance
-====
-
-![comparison](assets/comparison.png)
-
-Run time comparison on an M3 Pro, with `OMP_NUM_THREADS=8`. This is an average over 100 runs, so that the high startup costs of the JAX JIT compilation is amortized.
 
 Installation
 =====
@@ -58,13 +63,13 @@ Installation
 For Python, install from PyPi using pip:
 
 ```bash
-pip install fast_negative_binomial
+pip install fast_mutual_information
 ```
 
-or, using the [latest wheel](https://github.com/dpohanlon/fast_nb/releases) for your platform from GitHub:
+or, using the [latest wheel](https://github.com/dpohanlon/fast_mi/releases) for your platform from GitHub:
 
 ```bash
-pip install fast_negative_binomial-0.1.0-cp310-cp310-macosx_11_0_arm64.whl
+pip install fast_mutual_information-0.1.0-cp310-cp310-macosx_11_0_arm64.whl
 ```
 
 or, to install from source, see below.
@@ -103,7 +108,7 @@ To checkout the repository, as well as the PyBind11 submodule:
 
 ``` bash
 
-git clone --recurse-submodules git@github.com:dpohanlon/fast_nb.git
+git clone --recurse-submodules git@github.com:dpohanlon/fast_mi.git
 cd fast_nb
 ```
 
@@ -140,27 +145,22 @@ Contributing
 If you've made modifications, reformat with `clang-format`:
 
 ```bash
-clang-format -i -style=file fast_negative_binomial/*pp
+clang-format -i -style=file fast_mutual_information/*pp
 ```
 
 Optimisations
 =============
 
-Above a certain length of `k` where the overhead of spawning threads is worthwhile, caluculations are done in parallel over `OMP_NUM_THREADS`. The value of `r` is cached and used over all iterations, and (where `constexpr` math is supported) small combinations of `k` and `r` are pre-computed at compile time. There are also two further optimisations that either cache the return value of the function, or cache the value of log gamma:
+Several optimisations have been implemented to accelerate mutual information computations, especially when working with repeated integer values. The package constructs a kd-tree from the transformed data to reduce the computational complexity of pairwise distance evaluations. This significantly speeds up the mutual information calculation.
 
-Caching the return
--------
+Copula Transformation
+---------------------
 
-As `k` is always an integer, sorting the array a head of time allows us to cache the previous result, to be used if the next value of `k` is the same. This is particularly useful for the case of single cell RNA sequencing data, where numerous small counts are repeated.
+Mutual information is computed in the transformed space via a copula. This decouples the marginals from the dependency structure, enabling flexible specification of marginal distributions (e.g., normal, uniform, negative binomial). The copula functions are configurable, allowing for on-the-fly calculations.
 
-Caching log gamma
--------
+Optimisations for Integer Inputs
+-------------------------------
 
-There is also a further optimisation that can be made by using the identity $\log \Gamma (x) = \log \Gamma (x - 1) + \log (x)$. If we know the value of $\log \Gamma (x - 1)$ we can compute $\log \Gamma (x)$ at the cost only of a call to $\log(x)$ rather than the more expensive $\log \Gamma (x)$. To attempt this optimisation as often as possible, we process these in order of increasing k, keeping track of the value of k and the corresponding value of $\log \Gamma (x)$. This has the advantage that we only need to cache two values (per thread), rather than a larger lookup table, and we can also compute repeated values in constant time.
+The kd-tree in the integer case is calculated on the raw input data, rather than the uniform distribution required for the copula, in order to exploit a 'run length' representation of the data. This keeps track of repeated values, so that the computation needs only happen once for each unique value. When the PDF of the copula is computed for the MI calculation, the CDF transformation is performed on the fly.
 
-Even in regions where there is a gap between the current k and the previous k, due to the expense of calling log gamma, it may still be faster to make repeated calls to $\log (k - 1)$, $\log (k - 2)$, etc.
-
-Fixed size Eigen arrays
--------
-
-Computation on fixed size Eigen arrays is preferable, as these are allocated on the stack, and can have SIMD, inlining, and loop unrolling optimisations applied. We can still leverage some of this advantage by constructing a fixed size `Eigen::Array`, and using the `Eigen::Map` constructor to convert to this from a subset of the larger dynamic array. These can be spread over threads, such that each has its own separate fixed size array. For the 'remainder' that is not an integer multiple of the fixed array size, this is calculated as normal (and therefore there is an additional overhead for these). In future we could also consider multiple fixed size arrays, and choose these dynamically depending on the workload.
+This representation also allows faster computation of the pairwise bin contents in the kd-tree, for repeated computation of pairs of input vectors. Here the run-length encoded representations of each vector can be computed once beforehand, and the pairwise encodings can be computed from this.

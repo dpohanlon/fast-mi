@@ -70,7 +70,6 @@ double normal_pdf(double x, double mean, double stddev) {
 
 // Cumulative Distribution Function (CDF) of the normal distribution
 double normal_cdf(double x, double mean, double stddev) {
-    // std::cout << "CDF " << x << " " << mean << " " << stddev << std::endl;
 
     if (stddev <= 0.0) {
         throw std::invalid_argument("Standard deviation must be positive.");
@@ -83,7 +82,6 @@ double normal_cdf(double x, double mean, double stddev) {
 // Inverse Cumulative Distribution Function (Inverse CDF) or Quantile Function
 // of the normal distribution
 double normal_icdf(double p, double mean, double stddev) {
-    // std::cout << "ICDF " << p << " " << mean << " " << stddev << std::endl;
 
     if (stddev <= 0.0) {
         throw std::invalid_argument("Standard deviation must be positive.");
@@ -107,10 +105,9 @@ double normal_icdf(double p, double mean, double stddev) {
 Eigen::MatrixXd sampleMultivariateNormal(const Eigen::VectorXd& mean,
                                          const Eigen::MatrixXd& cov,
                                          int num_samples) {
-    // Dimension of the distribution
+
     const int n = static_cast<int>(mean.size());
 
-    // 1) Cholesky decomposition of the covariance matrix
     Eigen::LLT<Eigen::MatrixXd> lltOfCov(cov);
     if (lltOfCov.info() == Eigen::NumericalIssue) {
         throw std::runtime_error(
@@ -119,29 +116,22 @@ Eigen::MatrixXd sampleMultivariateNormal(const Eigen::VectorXd& mean,
     }
     Eigen::MatrixXd L = lltOfCov.matrixL();  // L is lower-triangular
 
-    // 2) Prepare random number generation
     std::mt19937 rng(static_cast<unsigned long>(
         std::chrono::high_resolution_clock::now().time_since_epoch().count()));
     std::normal_distribution<double> dist(0.0, 1.0);
 
-    // 3) Generate samples
-    // We'll store them column-wise: each column is a sample.
     Eigen::MatrixXd result(n, num_samples);
 
     for (int i = 0; i < num_samples; ++i) {
-        // Step a) Sample z ~ N(0, I)
         Eigen::VectorXd z(n);
         for (int j = 0; j < n; ++j) {
             z(j) = dist(rng);
         }
 
-        // Step b) Transform z -> x' = L*z
         Eigen::VectorXd x_prime = L * z;
 
-        // Step c) Shift by the mean
         Eigen::VectorXd x = mean + x_prime;
 
-        // Put this sample into the result matrix (as a column)
         result.col(i) = x;
     }
 

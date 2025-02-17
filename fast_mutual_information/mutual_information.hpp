@@ -261,6 +261,20 @@ double mutual_information_nb(double mean1, double conc1, double mean2,
     return mi.mutual_information();
 }
 
+double mutual_information_zinb(double mean1, double conc1, double mean2,
+                             double conc2, double alpha1, double alpha2,
+                             std::vector<std::pair<Point<int>, int>>& data,
+                             int nPoints, Bounds<int> bounds,
+                             int min_pop = 10) {
+    auto cdf_x = [=](double x) -> double { return zinb2_base(x, mean1, conc1, alpha1); };
+    auto cdf_y = [=](double y) -> double { return zinb2_base(y, mean2, conc2, alpha2); };
+
+    MutualInformation<int> mi(data, nPoints, bounds, min_pop);
+    mi.setCDF(cdf_x, cdf_y);
+
+    return mi.mutual_information();
+}
+
 // Without RLE
 double mutual_information_nb(double mean1, double conc1, double mean2,
                              double conc2, std::vector<Point<int>>& data,
@@ -285,6 +299,20 @@ double mutual_information_nb_quantised_rle(
     Bounds<int> bounds = get_bounds(point_samples);
 
     return mutual_information_nb(mean1, conc1, mean2, conc2, point_samples,
+                                 nPoints, bounds, min_pop);
+}
+
+double mutual_information_zinb_quantised_rle(
+    double mean1, double conc1, double mean2, double conc2, double alpha1, double alpha2,
+    std::vector<std::pair<int, int>> rle1,
+    std::vector<std::pair<int, int>> rle2, int nPoints, int min_pop = 25) {
+    std::vector<std::pair<Point<int>, int>> point_samples =
+        runLengthDecoding(rle1, rle2);
+
+    // A little inefficient, as we can cache these per feature separately
+    Bounds<int> bounds = get_bounds(point_samples);
+
+    return mutual_information_zinb(mean1, conc1, mean2, conc2, alpha1, alpha2, point_samples,
                                  nPoints, bounds, min_pop);
 }
 
@@ -359,6 +387,40 @@ Eigen::MatrixXd mutual_information_nb_rle(Eigen::MatrixXi& samples,
         for (int j = i + 1; j < samples.cols(); j++) {
             double mi = mutual_information_nb_quantised_rle(
                 means(i), concentrations(i), means(j), concentrations(j),
+                rle[i], rle[j], samples.rows(), min_pop);
+
+            results(i, j) = mi;
+        }
+    }
+
+    return results;
+}
+
+// Handle alpha as a parameter always?
+Eigen::MatrixXd mutual_information_zinb_rle(Eigen::MatrixXi& samples,
+                                          Eigen::VectorXd means,
+                                          Eigen::VectorXd concentrations,
+                                          Eigen::VectorXd alphas,
+                                          int min_pop = 25) {
+    // Beware of types - integer matrix input
+
+    std::vector<std::vector<std::pair<int, int>>> rle(samples.cols());
+
+    Eigen::MatrixXd results(samples.cols(), samples.cols());
+
+#pragma omp parallel for
+    for (int i = 0; i < samples.cols(); i++) {
+        rle[i] = runLengthEncoding(samples.col(i));
+    }
+
+    // I don't *think* that the rle vectors are modified, but replace all of the
+    // downstream functions with const versions, to be sure
+
+#pragma omp parallel for
+    for (int i = 0; i < samples.cols(); i++) {
+        for (int j = i + 1; j < samples.cols(); j++) {
+            double mi = mutual_information_zinb_quantised_rle(
+                means(i), concentrations(i), means(j), concentrations(j), alphas(i), alphas(j),
                 rle[i], rle[j], samples.rows(), min_pop);
 
             results(i, j) = mi;

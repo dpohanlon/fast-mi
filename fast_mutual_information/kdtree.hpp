@@ -80,7 +80,8 @@ struct hash<Point<int>> {
     std::size_t operator()(const Point<int>& p) const {
         auto h1 = std::hash<int>()(p.x);
         auto h2 = std::hash<int>()(p.y);
-        // Combine the two hash values.
+
+        // More magic
         return h1 ^ (h2 + 0x9e3779b97f4a7c15ULL + (h1 << 6) + (h1 >> 2));
     }
 };

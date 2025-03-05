@@ -246,6 +246,31 @@ double mutual_information_quantised(double mean1, double std_dev1, double mean2,
                                      point_samples, min_pop);
 }
 
+// Without RLE
+double mutual_information_nb(double mean1, double conc1, double mean2,
+                             double conc2, std::vector<Point<int>>& data,
+                             int min_pop = 10) {
+    auto cdf_x = [=](double x) -> double { return nb2_base(x, mean1, conc1); };
+    auto cdf_y = [=](double y) -> double { return nb2_base(y, mean2, conc2); };
+
+    MutualInformation<int> mi(data, min_pop);
+    mi.setCDF(cdf_x, cdf_y);
+
+    return mi.mutual_information();
+}
+
+// Mutual information with NB distributed marginals
+double mutual_information_nb(double mean1, double conc1, double mean2,
+                             double conc2, Eigen::VectorXd& data1,
+                             Eigen::VectorXd data2, int min_pop = 25) {
+
+    std::vector<Point<int>> point_samples =
+        convertSamplesToPointsQuantised(data1, data2);
+
+    return mutual_information_nb(mean1, conc1, mean2, conc2, point_samples,
+                                 min_pop);
+}
+
 // Mutual information with NB distributed marginals
 double mutual_information_nb(double mean1, double conc1, double mean2,
                              double conc2,
@@ -270,19 +295,6 @@ double mutual_information_zinb(double mean1, double conc1, double mean2,
     auto cdf_y = [=](double y) -> double { return zinb2_base(y, mean2, conc2, alpha2); };
 
     MutualInformation<int> mi(data, nPoints, bounds, min_pop);
-    mi.setCDF(cdf_x, cdf_y);
-
-    return mi.mutual_information();
-}
-
-// Without RLE
-double mutual_information_nb(double mean1, double conc1, double mean2,
-                             double conc2, std::vector<Point<int>>& data,
-                             int min_pop = 10) {
-    auto cdf_x = [=](double x) -> double { return nb2_base(x, mean1, conc1); };
-    auto cdf_y = [=](double y) -> double { return nb2_base(y, mean2, conc2); };
-
-    MutualInformation<int> mi(data, min_pop);
     mi.setCDF(cdf_x, cdf_y);
 
     return mi.mutual_information();
@@ -457,6 +469,7 @@ Eigen::MatrixXd mutual_information_normal(Eigen::MatrixXi& samples,
                                           Eigen::VectorXd means,
                                           Eigen::VectorXd std_devs,
                                           int min_pop = 25) {
+
     Eigen::MatrixXd results(samples.cols(), samples.cols());
 
 #pragma omp parallel for
@@ -469,6 +482,28 @@ Eigen::MatrixXd mutual_information_normal(Eigen::MatrixXi& samples,
 
             results(i, j) = mutual_information_quantised(
                 means(i), std_devs(i), means(j), std_devs(j), f1, f2, min_pop);
+        }
+    }
+
+    return results;
+}
+// mi_negative_binomial in python
+Eigen::MatrixXd mutual_information_nb(Eigen::MatrixXi& samples,
+                                                    Eigen::VectorXd means,
+                                                    Eigen::VectorXd concs,
+                                                    int min_pop = 25) {
+
+    Eigen::MatrixXd results(samples.cols(), samples.cols());
+
+#pragma omp parallel for
+    for (int i = 0; i < samples.cols(); i++) {
+        for (int j = i + 1; j < samples.cols(); j++) {
+
+            Eigen::VectorXd f1 = samples.col(i).cast<double>();
+            Eigen::VectorXd f2 = samples.col(j).cast<double>();
+
+            results(i, j) = mutual_information_nb(means(i), concs(i), means(j), concs(j), f1, f2, min_pop);
+
         }
     }
 

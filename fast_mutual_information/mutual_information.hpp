@@ -331,6 +331,7 @@ double mutual_information_nb(double mean1, double conc1, double mean2,
 
 // TODO: Pass a struct of params rather that something explicit to clean this up
 
+// mi_normal_q_rle in python
 Eigen::MatrixXd mutual_information_rle(Eigen::MatrixXi& samples,
                                        Eigen::VectorXd means,
                                        Eigen::VectorXd std_devs,
@@ -451,6 +452,7 @@ Eigen::MatrixXd mutual_information_normal(Eigen::MatrixXd& samples,
     return results;
 }
 
+// mi_normal_q in python
 Eigen::MatrixXd mutual_information_normal(Eigen::MatrixXi& samples,
                                           Eigen::VectorXd means,
                                           Eigen::VectorXd std_devs,

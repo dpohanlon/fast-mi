@@ -159,7 +159,7 @@ double mutual_information_normal(double mean1, double std_dev1, double mean2,
                                  int nPoints, Bounds<int> bounds,
                                  int min_pop = 25) {
     MutualInformation<int> mi(data, nPoints, bounds, min_pop);
-    mi.setNormalCDF(mean1, std_dev1, mean2, std_dev2);
+    mi.setNormalCopula(mean1, std_dev1, mean2, std_dev2);
 
     return mi.mutual_information();
 }
@@ -173,7 +173,6 @@ double mutual_information_normal(Eigen::MatrixXd& data, int min_pop = 25) {
 double mutual_information_normal(double mean1, double std_dev1, double mean2,
                                  double std_dev2, Eigen::MatrixXd& data,
                                  int min_pop = 25) {
-    // std::cout << "THIS ONE!?" << std::endl;
 
     Eigen::VectorXd mean(2);
     mean << mean1, mean2;
@@ -188,26 +187,32 @@ double mutual_information_normal(double mean1, double std_dev1, double mean2,
     std::vector<Point<double>> point_samples =
         convertSamplesToPoints(uniform_samples);
 
-    // std::cout << point_samples.size() << std::endl;
-    // std::cout << point_samples[0].x << " " << point_samples[0].y <<
-    // std::endl;
-
     return mutual_information(point_samples, min_pop);
 }
 
+template <typename Derived>
 double mutual_information_normal(double mean1, double std_dev1, double mean2,
-                                 double std_dev2, Eigen::VectorXd& data1,
-                                 Eigen::VectorXd& data2, int min_pop = 25) {
-    Eigen::VectorXd uniform_samples1 =
-        transformToUniform(data1, mean1, std_dev1);
-    Eigen::VectorXd uniform_samples2 =
-        transformToUniform(data2, mean2, std_dev2);
+                                 double std_dev2, const Eigen::MatrixBase<Derived>& data1,
+                                 const Eigen::MatrixBase<Derived>& data2, int min_pop = 25) {
 
-    std::vector<Point<double>> point_samples =
+    // Ensure that the input data is a vector.
+    static_assert(Derived::ColsAtCompileTime == 1 || Derived::RowsAtCompileTime == 1,
+                  "data must be a vector");
+
+    // Force evaluation into concrete types using PlainObject.
+    typename Derived::PlainObject uniform_samples1 = transformToUniform(data1, mean1, std_dev1);
+    typename Derived::PlainObject uniform_samples2 = transformToUniform(data2, mean2, std_dev2);
+
+    // Extract the underlying scalar type
+    using Scalar = typename Derived::Scalar;
+
+    // Convert the uniform samples to points.
+    std::vector<Point<Scalar>> point_samples =
         convertSamplesToPoints(uniform_samples1, uniform_samples2);
 
     return mutual_information(point_samples, min_pop);
 }
+
 
 // TODO: Find a better way to integrate all of these parameters, particularly
 // the total number of points and the overall bounds
@@ -367,8 +372,7 @@ Eigen::MatrixXd mutual_information_rle(Eigen::MatrixXi& samples,
         for (int j = i + 1; j < samples.cols(); j++) {
             double mi = mutual_information_quantised_rle(
                        means(i), std_devs(i), means(j), std_devs(j), rle[i],
-                       rle[j], samples.rows()),
-                   min_pop;
+                       rle[j], samples.rows(), min_pop);
 
             results(i, j) = mi;
         }
@@ -443,18 +447,19 @@ Eigen::MatrixXd mutual_information_zinb_rle(Eigen::MatrixXi& samples,
     return results;
 }
 
-// I also want to take in an integer matrix - template it?
-Eigen::MatrixXd mutual_information_normal(Eigen::MatrixXd& samples,
-                                          Eigen::VectorXd means,
-                                          Eigen::VectorXd std_devs,
-                                          int min_pop = 25) {
+// mi_normal in python, now with integer support via templating
+template <typename T>
+Eigen::MatrixXd mutual_information_normal(const Eigen::MatrixBase<T>& samples,
+                                            const Eigen::VectorXd& means,
+                                            const Eigen::VectorXd& std_devs,
+                                            int min_pop = 25) {
     Eigen::MatrixXd results(samples.cols(), samples.cols());
 
 #pragma omp parallel for
     for (int i = 0; i < samples.cols(); i++) {
         for (int j = i + 1; j < samples.cols(); j++) {
-            Eigen::VectorXd f1 = samples.col(i);
-            Eigen::VectorXd f2 = samples.col(j);
+            auto f1 = samples.col(i);
+            auto f2 = samples.col(j);
 
             results(i, j) = mutual_information_normal(
                 means(i), std_devs(i), means(j), std_devs(j), f1, f2, min_pop);

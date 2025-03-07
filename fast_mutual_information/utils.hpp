@@ -123,25 +123,73 @@ std::vector<std::pair<Point<int>, int>> runLengthDecoding(
 
 // Could template specialise, but it's probably not worth it
 
+// std::vector<Point<int>> convertSamplesToPointsQuantised(
+//     const Eigen::MatrixXd& samples,
+//     const std::string& rounding_mode = "round") {
+//     // Ensure that the samples matrix has exactly 2 rows for x and y
+//     if (samples.rows() != 2) {
+//         throw std::invalid_argument(
+//             "Samples matrix must have exactly 2 rows for x and y coordinates.");
+//     }
+
+//     int num_samples = static_cast<int>(samples.cols());
+//     std::vector<Point<int>> points;
+//     points.reserve(num_samples);
+
+//     for (int i = 0; i < num_samples; ++i) {
+//         double x_double = samples(0, i);
+//         double y_double = samples(1, i);
+//         int x_int, y_int;
+
+//         // Convert double to int based on the rounding mode
+//         if (rounding_mode == "round") {
+//             x_int = static_cast<int>(std::round(x_double));
+//             y_int = static_cast<int>(std::round(y_double));
+//         } else if (rounding_mode == "floor") {
+//             x_int = static_cast<int>(std::floor(x_double));
+//             y_int = static_cast<int>(std::floor(y_double));
+//         } else if (rounding_mode == "ceil") {
+//             x_int = static_cast<int>(std::ceil(x_double));
+//             y_int = static_cast<int>(std::ceil(y_double));
+//         } else if (rounding_mode == "truncate") {
+//             x_int = static_cast<int>(x_double);  // Truncates towards zero
+//             y_int = static_cast<int>(y_double);
+//         } else {
+//             throw std::invalid_argument(
+//                 "Invalid rounding_mode. Choose from 'round', 'floor', 'ceil', "
+//                 "or 'truncate'.");
+//         }
+
+//         points.emplace_back(Point<int>{x_int, y_int});
+//     }
+
+//     return points;
+// }
+
 std::vector<Point<int>> convertSamplesToPointsQuantised(
     const Eigen::MatrixXd& samples,
     const std::string& rounding_mode = "round") {
-    // Ensure that the samples matrix has exactly 2 rows for x and y
-    if (samples.rows() != 2) {
-        throw std::invalid_argument(
-            "Samples matrix must have exactly 2 rows for x and y coordinates.");
+    Eigen::MatrixXd adjusted_samples = samples;
+    // If samples has 2 columns and more than 2 rows, assume samples is N x 2.
+    if (samples.cols() == 2 && samples.rows() != 2) {
+        adjusted_samples = samples.transpose();
     }
 
-    int num_samples = static_cast<int>(samples.cols());
+    if (adjusted_samples.rows() != 2) {
+        throw std::invalid_argument(
+            "Samples matrix must have exactly 2 rows (or 2 columns, which will be transposed) "
+            "representing x and y coordinates.");
+    }
+
+    int num_samples = static_cast<int>(adjusted_samples.cols());
     std::vector<Point<int>> points;
     points.reserve(num_samples);
 
     for (int i = 0; i < num_samples; ++i) {
-        double x_double = samples(0, i);
-        double y_double = samples(1, i);
+        double x_double = adjusted_samples(0, i);
+        double y_double = adjusted_samples(1, i);
         int x_int, y_int;
 
-        // Convert double to int based on the rounding mode
         if (rounding_mode == "round") {
             x_int = static_cast<int>(std::round(x_double));
             y_int = static_cast<int>(std::round(y_double));
@@ -152,12 +200,11 @@ std::vector<Point<int>> convertSamplesToPointsQuantised(
             x_int = static_cast<int>(std::ceil(x_double));
             y_int = static_cast<int>(std::ceil(y_double));
         } else if (rounding_mode == "truncate") {
-            x_int = static_cast<int>(x_double);  // Truncates towards zero
+            x_int = static_cast<int>(x_double);
             y_int = static_cast<int>(y_double);
         } else {
             throw std::invalid_argument(
-                "Invalid rounding_mode. Choose from 'round', 'floor', 'ceil', "
-                "or 'truncate'.");
+                "Invalid rounding_mode. Choose from 'round', 'floor', 'ceil', or 'truncate'.");
         }
 
         points.emplace_back(Point<int>{x_int, y_int});
@@ -232,38 +279,47 @@ std::vector<Point<double>> convertSamplesToPoints(
     return points;
 }
 
-std::vector<Point<double>> convertSamplesToPoints(
-    const Eigen::VectorXd& samples1, const Eigen::VectorXd& samples2) {
+template <typename Derived>
+std::vector<Point<typename Derived::Scalar>> convertSamplesToPoints(
+    const Eigen::MatrixBase<Derived>& samples1, const Eigen::MatrixBase<Derived>& samples2) {
+
+    static_assert(Derived::ColsAtCompileTime == 1 || Derived::RowsAtCompileTime == 1,
+                    "data must be a vector");
+
     if (samples1.size() != samples2.size()) {
         throw std::invalid_argument(
             "Samples vectors must have the same length.");
     }
 
+    // Extract the underlying scalar type
+    using Scalar = typename Derived::Scalar;
+
     int num_samples = static_cast<int>(samples1.rows());
-    std::vector<Point<double>> points(num_samples);
+    std::vector<Point<Scalar>> points(num_samples);
 
     for (int i = 0; i < num_samples; ++i) {
-        double x = samples1(i);
-        double y = samples2(i);
+        Scalar x = samples1(i);
+        Scalar y = samples2(i);
 
-        points[i] = Point<double>{x, y};
+        points[i] = Point<Scalar>{x, y};
     }
 
     return points;
 }
 
 // Function to transform samples from normal to uniform distribution
-Eigen::MatrixXd transformToUniform(const Eigen::MatrixXd& samples,
-                                   const Eigen::VectorXd& mean,
-                                   const Eigen::VectorXd& std_dev) {
-    Eigen::MatrixXd uniform_samples(samples.rows(), samples.cols());
+template <typename Derived>
+typename Derived::PlainObject transformToUniform(
+    const Eigen::MatrixBase<Derived>& samples,
+    const Eigen::VectorXd& mean,
+    const Eigen::VectorXd& std_dev) {
 
-    // Cells
+    typename Derived::PlainObject uniform_samples(samples.rows(), samples.cols());
+
+    // Iterate over cells.
     for (int i = 0; i < samples.rows(); ++i) {
-        // Genes
         for (int j = 0; j < samples.cols(); ++j) {
-            uniform_samples(i, j) =
-                normal_cdf(samples(i, j), mean(j), std_dev(j));
+            uniform_samples(i, j) = normal_cdf(samples(i, j), mean(j), std_dev(j));
         }
     }
 

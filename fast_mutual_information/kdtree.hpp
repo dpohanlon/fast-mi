@@ -330,11 +330,22 @@ class KDTree {
 
             double bin_area = this->get_bin_area(*node);
 
-            double p_xy = calculate_p_xy(bin_count, bin_area);
+            const double epsilon = 1e-12;
+            // if (bin_area < epsilon) {
+            //     bin_area = epsilon;
+            // }
 
-            if (p_xy > 0) {
-                mi += p_xy * std::log(p_xy) * bin_area;
-            }
+            // double p_xy = calculate_p_xy(bin_count, bin_area);
+
+            // if (p_xy > 0) {
+            //     mi += p_xy * std::log(p_xy) * bin_area;
+            // }
+
+            // Compute log-density with a regularized bin area to avoid log(0)
+            double log_p_xy = std::log(bin_count) - std::log(total_count) - std::log(bin_area + epsilon);
+
+            // Accumulate mutual information contribution from this leaf
+            mi += (static_cast<double>(bin_count) / total_count) * log_p_xy;
 
             area += bin_area;
 
@@ -360,6 +371,8 @@ KDTree<T>::KDTree(const std::vector<Point<T>>& points, Copula<T>* copula,
 
     // These are the boundaries of the unit square for assumed U[0, 1] if passed
     // anything other than ints
+
+    // Check that this is true for other normal mi where the uniform transform isn't done?
 
     Bounds<T> bounds = {0.0, 1.0, 0.0, 1.0};
 

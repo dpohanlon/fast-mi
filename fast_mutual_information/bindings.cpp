@@ -16,7 +16,7 @@ PYBIND11_MODULE(fast_mutual_information, m) {
             return mutual_information_normal(mean1, std_dev1, mean2, std_dev2,
                                              data, min_pop);
         },
-        py::arg("mean1"), py::arg("mean2"), py::arg("std_dev1"),
+        py::arg("mean1"), py::arg("std_dev1"), py::arg("mean2"),
         py::arg("std_dev2"), py::arg("data"), py::arg("min_pop") = 25,
         "Fast mutual information computation with normally distributed "
         "marginals.\n\n"
@@ -31,6 +31,8 @@ PYBIND11_MODULE(fast_mutual_information, m) {
         "    min_pop (int): Mininmum bin population.\n\n"
         "Returns:\n"
         "    float: The mutual information.");
+
+    // Make it so that this correctly handles cases where it's passed integer types rather than just converting them to floats! Otherwise we get the optimisations wrong! And that's bad!
 
     m.def(
         "mi_normal",

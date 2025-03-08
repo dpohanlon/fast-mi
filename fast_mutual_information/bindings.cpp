@@ -4,6 +4,9 @@
 
 #include "mutual_information.hpp"
 
+// Looong looong matrix
+typedef Eigen::Matrix<long int, Eigen::Dynamic, Eigen::Dynamic> MatrixXl;
+
 namespace py = pybind11;
 
 PYBIND11_MODULE(fast_mutual_information, m) {
@@ -32,19 +35,36 @@ PYBIND11_MODULE(fast_mutual_information, m) {
         "Returns:\n"
         "    float: The mutual information.");
 
-    // Make it so that this correctly handles cases where it's passed integer types rather than just converting them to floats! Otherwise we get the optimisations wrong! And that's bad!
+    m.def("mi_normal",
+          [](const Eigen::MatrixXd& data, const Eigen::VectorXd& means,
+             const Eigen::VectorXd& std_devs, int min_pop) -> Eigen::MatrixXd {
+              return mutual_information_normal(data, means, std_devs, min_pop);
+             },
+            py::arg("data"), py::arg("means"), py::arg("std_devs"),
+            py::arg("min_pop") = 25,
+          "Fast mutual information computation with normally distributed "
+          "marginals.\n\n"
+          "Parameters:\n"
+          "    data (np.array): Integer data array of shape (Nsamples, "
+          "Nfeatures).\n"
+          "    means (np.array): Means of each normal distribution (Nfeatures, "
+          "1).\n"
+          "    std_devs (np.array): Standard deviations of each normal distribution "
+          "(Nfeatures, 1).\n"
+          "    min_pop (int): Mininmum bin population.\n\n"
+          "Returns:\n"
+          "    np.array: Array of mutual information values.");
 
     m.def(
         "mi_normal",
-        [](Eigen::MatrixXd& samples, Eigen::VectorXd means,
-           Eigen::VectorXd variances, int min_pop) -> Eigen::MatrixXd {
-            return mutual_information_normal(samples, means, variances,
-                                             min_pop);
+        [](Eigen::MatrixXi& data, Eigen::VectorXd& means,
+           Eigen::VectorXd& variances, int min_pop) -> Eigen::MatrixXd {
+            return mutual_information_normal(data, means, variances, min_pop);
         },
         py::arg("data"), py::arg("means"), py::arg("variances"),
         py::arg("min_pop") = 25,
         "Fast mutual information computation with normally distributed "
-        "marginals.\n\n"
+        "marginals, quantised for integer inputs.\n\n"
         "Parameters:\n"
         "    data (np.array): Integer data array of shape (Nsamples, "
         "Nfeatures).\n"
@@ -57,10 +77,11 @@ PYBIND11_MODULE(fast_mutual_information, m) {
         "    np.array: Array of mutual information values.");
 
     m.def(
-        "mi_normal_q",
-        [](Eigen::MatrixXi& data, Eigen::VectorXd& means,
+        "mi_normal",
+        [](MatrixXl& data, Eigen::VectorXd& means,
            Eigen::VectorXd& variances, int min_pop) -> Eigen::MatrixXd {
-            return mutual_information_normal(data, means, variances, min_pop);
+            Eigen::MatrixXi data_i = data.cast<int>().eval();
+            return mutual_information_normal(data_i, means, variances, min_pop);
         },
         py::arg("data"), py::arg("means"), py::arg("variances"),
         py::arg("min_pop") = 25,

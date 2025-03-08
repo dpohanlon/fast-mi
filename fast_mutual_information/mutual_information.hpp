@@ -190,24 +190,16 @@ double mutual_information_normal(double mean1, double std_dev1, double mean2,
     return mutual_information(point_samples, min_pop);
 }
 
-template <typename Derived>
+template <typename T>
 double mutual_information_normal(double mean1, double std_dev1, double mean2,
-                                 double std_dev2, const Eigen::MatrixBase<Derived>& data1,
-                                 const Eigen::MatrixBase<Derived>& data2, int min_pop = 25) {
+                                 double std_dev2, const T& data1,
+                                 const T& data2, int min_pop = 25) {
 
-    // Ensure that the input data is a vector.
-    static_assert(Derived::ColsAtCompileTime == 1 || Derived::RowsAtCompileTime == 1,
-                  "data must be a vector");
-
-    // Force evaluation into concrete types using PlainObject.
-    typename Derived::PlainObject uniform_samples1 = transformToUniform(data1, mean1, std_dev1);
-    typename Derived::PlainObject uniform_samples2 = transformToUniform(data2, mean2, std_dev2);
-
-    // Extract the underlying scalar type
-    using Scalar = typename Derived::Scalar;
+    Eigen::VectorXd uniform_samples1 = transformToUniform(data1, mean1, std_dev1);
+    Eigen::VectorXd uniform_samples2 = transformToUniform(data2, mean2, std_dev2);
 
     // Convert the uniform samples to points.
-    std::vector<Point<Scalar>> point_samples =
+    std::vector<Point<double>> point_samples =
         convertSamplesToPoints(uniform_samples1, uniform_samples2);
 
     return mutual_information(point_samples, min_pop);
@@ -447,9 +439,8 @@ Eigen::MatrixXd mutual_information_zinb_rle(Eigen::MatrixXi& samples,
     return results;
 }
 
-// mi_normal in python, now with integer support via templating
-template <typename T>
-Eigen::MatrixXd mutual_information_normal(const Eigen::MatrixBase<T>& samples,
+// mi_normal in python
+Eigen::MatrixXd mutual_information_normal(const Eigen::MatrixXd& samples,
                                             const Eigen::VectorXd& means,
                                             const Eigen::VectorXd& std_devs,
                                             int min_pop = 25) {

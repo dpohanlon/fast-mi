@@ -279,42 +279,35 @@ std::vector<Point<double>> convertSamplesToPoints(
     return points;
 }
 
-template <typename Derived>
-std::vector<Point<typename Derived::Scalar>> convertSamplesToPoints(
-    const Eigen::MatrixBase<Derived>& samples1, const Eigen::MatrixBase<Derived>& samples2) {
-
-    static_assert(Derived::ColsAtCompileTime == 1 || Derived::RowsAtCompileTime == 1,
-                    "data must be a vector");
+std::vector<Point<double>> convertSamplesToPoints(
+    const Eigen::MatrixXd& samples1, const Eigen::MatrixXd& samples2) {
 
     if (samples1.size() != samples2.size()) {
         throw std::invalid_argument(
             "Samples vectors must have the same length.");
     }
 
-    // Extract the underlying scalar type
-    using Scalar = typename Derived::Scalar;
-
     int num_samples = static_cast<int>(samples1.rows());
-    std::vector<Point<Scalar>> points(num_samples);
+    std::vector<Point<double>> points(num_samples);
 
     for (int i = 0; i < num_samples; ++i) {
-        Scalar x = samples1(i);
-        Scalar y = samples2(i);
+        double x = samples1(i);
+        double y = samples2(i);
 
-        points[i] = Point<Scalar>{x, y};
+        points[i] = Point<double>{x, y};
     }
 
     return points;
 }
 
 // Function to transform samples from normal to uniform distribution
-template <typename Derived>
-typename Derived::PlainObject transformToUniform(
-    const Eigen::MatrixBase<Derived>& samples,
+template <typename T>
+Eigen::MatrixXd transformToUniform(
+    const T& samples,
     const Eigen::VectorXd& mean,
     const Eigen::VectorXd& std_dev) {
 
-    typename Derived::PlainObject uniform_samples(samples.rows(), samples.cols());
+    Eigen::MatrixXd uniform_samples(samples.rows(), samples.cols());
 
     // Iterate over cells.
     for (int i = 0; i < samples.rows(); ++i) {
@@ -326,7 +319,8 @@ typename Derived::PlainObject transformToUniform(
     return uniform_samples;
 }
 
-Eigen::MatrixXd transformToUniform(const Eigen::VectorXd& samples,
+template <typename T>
+Eigen::VectorXd transformToUniform(const T& samples,
                                    const double mean, const double std_dev) {
     Eigen::VectorXd uniform_samples(samples.size());
 

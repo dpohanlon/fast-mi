@@ -115,9 +115,11 @@ class MutualInformation {
         return tree.compute_mutual_information();
     }
 
+    Copula<T>* copula;
+
    private:
     KDTree<T> tree;
-    Copula<T>* copula;
+    // Copula<T>* copula;
 };
 
 template <>
@@ -243,39 +245,47 @@ double mutual_information_quantised(double mean1, double std_dev1, double mean2,
                                      point_samples, min_pop);
 }
 
-// Without RLE
+// Without RLE, 3
 double mutual_information_nb(double mean1, double conc1, double mean2,
                              double conc2, std::vector<Point<int>>& data,
-                             int min_pop = 10) {
-    auto cdf_x = [=](double x) -> double { return nb2_base(x, mean1, conc1); };
-    auto cdf_y = [=](double y) -> double { return nb2_base(y, mean2, conc2); };
+                             int min_pop = 25) {
+    auto cdf_x = [=](int x) -> double { return nb2_cdf_single(x, mean1, conc1); };
+    auto cdf_y = [=](int y) -> double { return nb2_cdf_single(y, mean2, conc2); };
+
+    // for (auto& point : data) {
+    //     std::cout << point.x << " " << point.y << std::endl;
+    // }
 
     MutualInformation<int> mi(data, min_pop);
     mi.setCDF(cdf_x, cdf_y);
 
+    // std::cout << mi.copula->cdf_x(data[0].x) << " " << mi.copula->cdf_y(data[0].y) << std::endl;
+
+    // std::cout << mi.copula->cdf_x(mean1) << std::endl;
+
     return mi.mutual_information();
 }
 
-// Mutual information with NB distributed marginals
+// 2
 double mutual_information_nb(double mean1, double conc1, double mean2,
-                             double conc2, Eigen::VectorXd& data1,
-                             Eigen::VectorXd data2, int min_pop = 25) {
+                             double conc2, Eigen::VectorXi& data1,
+                             Eigen::VectorXi data2, int min_pop = 25) {
 
     std::vector<Point<int>> point_samples =
-        convertSamplesToPointsQuantised(data1, data2);
+        convertSamplesToPoints(data1, data2);
 
     return mutual_information_nb(mean1, conc1, mean2, conc2, point_samples,
                                  min_pop);
 }
 
-// Mutual information with NB distributed marginals
+// Mutual information with NB distributed marginals, RLE
 double mutual_information_nb(double mean1, double conc1, double mean2,
                              double conc2,
                              std::vector<std::pair<Point<int>, int>>& data,
                              int nPoints, Bounds<int> bounds,
                              int min_pop = 10) {
-    auto cdf_x = [=](double x) -> double { return nb2_base(x, mean1, conc1); };
-    auto cdf_y = [=](double y) -> double { return nb2_base(y, mean2, conc2); };
+    auto cdf_x = [=](int x) -> double { return nb2_cdf_single(x, mean1, conc1); };
+    auto cdf_y = [=](int y) -> double { return nb2_cdf_single(y, mean2, conc2); };
 
     MutualInformation<int> mi(data, nPoints, bounds, min_pop);
     mi.setCDF(cdf_x, cdf_y);
@@ -288,8 +298,8 @@ double mutual_information_zinb(double mean1, double conc1, double mean2,
                              std::vector<std::pair<Point<int>, int>>& data,
                              int nPoints, Bounds<int> bounds,
                              int min_pop = 10) {
-    auto cdf_x = [=](double x) -> double { return zinb2_base(x, mean1, conc1, alpha1); };
-    auto cdf_y = [=](double y) -> double { return zinb2_base(y, mean2, conc2, alpha2); };
+    auto cdf_x = [=](int x) -> double { return zinb2_base(x, mean1, conc1, alpha1); };
+    auto cdf_y = [=](int y) -> double { return zinb2_base(y, mean2, conc2, alpha2); };
 
     MutualInformation<int> mi(data, nPoints, bounds, min_pop);
     mi.setCDF(cdf_x, cdf_y);
@@ -483,7 +493,7 @@ Eigen::MatrixXd mutual_information_normal(Eigen::MatrixXi& samples,
 
     return results;
 }
-// mi_negative_binomial in python
+// mi_negative_binomial in python, 1
 Eigen::MatrixXd mutual_information_nb(Eigen::MatrixXi& samples,
                                                     Eigen::VectorXd means,
                                                     Eigen::VectorXd concs,
@@ -495,8 +505,8 @@ Eigen::MatrixXd mutual_information_nb(Eigen::MatrixXi& samples,
     for (int i = 0; i < samples.cols(); i++) {
         for (int j = i + 1; j < samples.cols(); j++) {
 
-            Eigen::VectorXd f1 = samples.col(i).cast<double>();
-            Eigen::VectorXd f2 = samples.col(j).cast<double>();
+            Eigen::VectorXi f1 = samples.col(i);
+            Eigen::VectorXi f2 = samples.col(j);
 
             results(i, j) = mutual_information_nb(means(i), concs(i), means(j), concs(j), f1, f2, min_pop);
 

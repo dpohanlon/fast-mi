@@ -280,14 +280,14 @@ std::vector<Point<double>> convertSamplesToPoints(
 }
 
 std::vector<Point<double>> convertSamplesToPoints(
-    const Eigen::MatrixXd& samples1, const Eigen::MatrixXd& samples2) {
+    const Eigen::VectorXd& samples1, const Eigen::VectorXd& samples2) {
 
     if (samples1.size() != samples2.size()) {
         throw std::invalid_argument(
             "Samples vectors must have the same length.");
     }
 
-    int num_samples = static_cast<int>(samples1.rows());
+    int num_samples = static_cast<int>(samples1.size());
     std::vector<Point<double>> points(num_samples);
 
     for (int i = 0; i < num_samples; ++i) {
@@ -295,6 +295,27 @@ std::vector<Point<double>> convertSamplesToPoints(
         double y = samples2(i);
 
         points[i] = Point<double>{x, y};
+    }
+
+    return points;
+}
+
+std::vector<Point<int>> convertSamplesToPoints(
+    const Eigen::VectorXi& samples1, const Eigen::VectorXi& samples2) {
+
+    if (samples1.size() != samples2.size()) {
+        throw std::invalid_argument(
+            "Samples vectors must have the same length.");
+    }
+
+    int num_samples = static_cast<int>(samples1.size());
+    std::vector<Point<int>> points(num_samples);
+
+    for (int i = 0; i < num_samples; ++i) {
+        int x = samples1(i);
+        int y = samples2(i);
+
+        points[i] = Point<int>{x, y};
     }
 
     return points;

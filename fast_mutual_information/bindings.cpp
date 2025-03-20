@@ -13,6 +13,17 @@ PYBIND11_MODULE(fast_mutual_information, m) {
     m.doc() = "Python bindings for fast mutual information computation.";
 
     m.def(
+        "mi_ml",
+        [](Eigen::MatrixXi& data) -> Eigen::MatrixXd {
+            return mutual_information_ml(data);
+        },
+        py::arg("data"),
+        "Fast mutual information using the naive discrete ML estimator.\n\n"
+        "Parameters:\n"
+        "    data (np.array): Data array of shape (Nsamples, Nfeatures).\n"
+        "    float: The mutual information.");
+
+    m.def(
         "mi_normal",
         [](double mean1, double std_dev1, double mean2, double std_dev2,
            Eigen::MatrixXd& data, int min_pop) -> double {

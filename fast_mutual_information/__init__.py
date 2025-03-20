@@ -1,4 +1,5 @@
 from .fast_mutual_information import (
+    mi_ml,
     mi_normal,
     mi_negative_binomial,
     mi_normal_q_rle,
@@ -8,6 +9,7 @@ from .fast_mutual_information import (
 )
 
 __all__ = [
+    "mi_ml",
     "mi_normal",
     "mi_negative_binomial",
     "mi_normal_q_rle",

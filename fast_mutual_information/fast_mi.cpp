@@ -116,6 +116,7 @@ static void BM_RLE_MI(benchmark::State& state) {
 
     for (auto _ : state) {
         Eigen::MatrixXd mi = mutual_information_rle(samples, mean, variance);
+        // Eigen::MatrixXd mi = mutual_information_ml(samples);
 
         benchmark::DoNotOptimize(mi);
     }
@@ -123,7 +124,8 @@ static void BM_RLE_MI(benchmark::State& state) {
 }
 
 // BENCHMARK(BM_MI)->Range(16, 1 << 16)->Complexity();
-BENCHMARK(BM_RLE_MI)->Range(16, 1 << 14)->Complexity();
+// BENCHMARK(BM_RLE_MI)->RangeMultiplier(2)->Range(1024, 16384)->Complexity();
+BENCHMARK(BM_RLE_MI)->Range(16, 1 << 16)->Complexity();
 
 BENCHMARK_MAIN();
 
@@ -132,9 +134,9 @@ BENCHMARK_MAIN();
 int main() {
     // Here, N is both the number of dimensions and the number of correlated
     // normals.
-    const int N = 2;
+    const int N = 4000;
     const int num_samples =
-        100;  // number of samples drawn from the multivariate normal
+        10000;  // number of samples drawn from the multivariate normal
 
     // Setup random generators.
     std::mt19937 rng(42);
@@ -209,14 +211,16 @@ int main() {
 
     std_dev *= 5.5;
 
-    Eigen::VectorXd conc = (mean.eval().array() * mean.eval().array()) / ((std_dev.eval().array() * std_dev.eval().array()) - mean.eval().array());
+    // Eigen::VectorXd conc = (mean.eval().array() * mean.eval().array()) / ((std_dev.eval().array() * std_dev.eval().array()) - mean.eval().array());
 
-    std::cout << conc << std::endl;
+    // std::cout << conc << std::endl;
 
-    Eigen::MatrixXd mi_nb =
-        mutual_information_nb(samples_int, mean, conc, 5);
+    // Eigen::MatrixXd mi_nb =
+        // mutual_information_nb(samples_int, mean, conc, 5);
 
-    std::cout << "MI NB (ish)" << mi_nb << std::endl;
+    Eigen::MatrixXd mi = mutual_information_ml(samples_int);
+
+    // std::cout << "MI NB (ish)" << mi_nb << std::endl;
 
 }
 

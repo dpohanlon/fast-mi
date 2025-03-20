@@ -4,6 +4,7 @@
 
 #include <Eigen/Dense>
 #include <functional>
+#include <unordered_map>
 
 #include "copula.hpp"
 #include "fast_negative_binomial/fast_nb.hpp"
@@ -115,6 +116,9 @@ class MutualInformation {
         return tree.compute_mutual_information();
     }
 
+    double mutual_information_ml(const std::vector<std::pair<int, int>>& rle_x,
+                                 const std::vector<std::pair<int, int>>& rle_y);
+
     Copula<T>* copula;
 
    private:
@@ -141,6 +145,58 @@ double mutual_information(std::vector<Point<T>>& data, int min_pop = 25) {
 
     return mi.mutual_information();
 }
+
+// Implementation for MutualInformation::mutual_information_naive_rle
+template <>
+double MutualInformation<int>::mutual_information_ml(
+    const std::vector<std::pair<int, int>>& rle_x,
+    const std::vector<std::pair<int, int>>& rle_y) {
+    // Compute total number of samples (assuming rle_x covers the full dataset)
+    int total = 0;
+    for (const auto& p : rle_x) {
+        total += p.second;
+    }
+    if (total == 0) return 0.0;
+
+    double mi = 0.0;
+    size_t i = 0, j = 0;
+    int remaining_x = (i < rle_x.size() ? rle_x[i].second : 0);
+    int remaining_y = (j < rle_y.size() ? rle_y[j].second : 0);
+
+    while (i < rle_x.size() && j < rle_y.size()) {
+        // Overlap count is the minimum remaining counts in the current runs.
+        int count = std::min(remaining_x, remaining_y);
+
+        // Joint probability for the overlapping segment.
+        double p_xy = static_cast<double>(count) / total;
+        // Marginal probabilities from the full run segments.
+        double p_x = static_cast<double>(rle_x[i].second) / total;
+        double p_y = static_cast<double>(rle_y[j].second) / total;
+
+        if (p_xy > 0 && p_x > 0 && p_y > 0) {
+            mi += p_xy * std::log(p_xy / (p_x * p_y));
+        }
+
+        // Update remaining counts and advance pointers if a run is exhausted.
+        remaining_x -= count;
+        remaining_y -= count;
+        if (remaining_x == 0) {
+            i++;
+            if (i < rle_x.size()) {
+                remaining_x = rle_x[i].second;
+            }
+        }
+        if (remaining_y == 0) {
+            j++;
+            if (j < rle_y.size()) {
+                remaining_y = rle_y[j].second;
+            }
+        }
+    }
+
+    return mi;
+}
+
 
 // Pass normal parameters so the CDF can be calculated on the fly
 template <typename T>
@@ -510,6 +566,37 @@ Eigen::MatrixXd mutual_information_nb(Eigen::MatrixXi& samples,
 
             results(i, j) = mutual_information_nb(means(i), concs(i), means(j), concs(j), f1, f2, min_pop);
 
+        }
+    }
+
+    return results;
+}
+
+// double mutual_information_ml(Eigen::VectorXi& f1, Eigen::VectorXi& f2) {
+double mutual_information_ml(std::vector<std::pair<int, int>> rle_x, std::vector<std::pair<int, int>> rle_y) {
+
+    MutualInformation<int> mi;
+
+    return mi.mutual_information_ml(rle_x, rle_y);
+
+}
+
+// Cache in a slightly different way than the others, maybe slower
+Eigen::MatrixXd mutual_information_ml(Eigen::MatrixXi& samples) {
+    int ncols = samples.cols();
+    Eigen::MatrixXd results(ncols, ncols);
+
+    // Precompute and cache the RLE vectors using a map with the col index as key.
+    std::unordered_map<int, std::vector<std::pair<int, int>>> rleCache;
+    for (int i = 0; i < ncols; i++) {
+        Eigen::VectorXi f = samples.col(i);
+        rleCache[i] = runLengthEncoding(f);
+    }
+
+    #pragma omp parallel for
+    for (int i = 0; i < ncols; i++) {
+        for (int j = i + 1; j < ncols; j++) {
+            results(i, j) = mutual_information_ml(rleCache[i], rleCache[j]);
         }
     }
 

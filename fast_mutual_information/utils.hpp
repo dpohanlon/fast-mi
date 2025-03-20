@@ -6,6 +6,8 @@
 #include <numeric>
 #include <vector>
 
+#include <boost/sort/spreadsort/spreadsort.hpp>
+
 #include "mvn.hpp"
 #include "point.hpp"
 
@@ -15,10 +17,11 @@ std::vector<std::pair<int, int>> runLengthEncoding(std::vector<int>& points) {
     auto sorted_points = points;
 
     // Here maybe a radix sort?
-    std::sort(sorted_points.begin(), sorted_points.end());
+    // std::sort(sorted_points.begin(), sorted_points.end());
+    boost::sort::spreadsort::spreadsort(sorted_points.begin(), sorted_points.end());
 
     std::vector<std::pair<int, int>> result;
-    result.reserve(points.size() / 2);
+    result.reserve(sorted_points.size() / 2);
 
     int current = sorted_points[0];
     int count = 1;

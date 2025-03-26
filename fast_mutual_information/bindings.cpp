@@ -14,8 +14,9 @@ PYBIND11_MODULE(fast_mutual_information, m) {
 
     m.def(
         "mi_ml",
-        [](Eigen::MatrixXi& data) -> Eigen::MatrixXd {
-            return mutual_information_ml(data);
+        [](MatrixXl& data) -> Eigen::MatrixXd {
+            Eigen::MatrixXi data_i = data.cast<int>().eval();
+            return mutual_information_ml(data_i);
         },
         py::arg("data"),
         "Fast mutual information using the naive discrete ML estimator.\n\n"

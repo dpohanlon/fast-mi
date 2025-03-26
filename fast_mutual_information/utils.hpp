@@ -11,27 +11,21 @@
 #include "mvn.hpp"
 #include "point.hpp"
 
-std::vector<std::pair<int, int>> runLengthEncoding(std::vector<int>& points) {
+std::vector<std::pair<int, int>> runLengthEncoding(const std::vector<int>& points) {
     if (points.empty()) return {};
 
-    auto sorted_points = points;
-
-    // Here maybe a radix sort?
-    // std::sort(sorted_points.begin(), sorted_points.end());
-    boost::sort::spreadsort::spreadsort(sorted_points.begin(), sorted_points.end());
-
     std::vector<std::pair<int, int>> result;
-    result.reserve(sorted_points.size() / 2);
+    result.reserve(points.size() / 2);
 
-    int current = sorted_points[0];
+    int current = points[0];
     int count = 1;
 
-    for (std::size_t i = 1; i < sorted_points.size(); ++i) {
-        if (sorted_points[i] == current) {
+    for (std::size_t i = 1; i < points.size(); ++i) {
+        if (points[i] == current) {
             ++count;
         } else {
             result.emplace_back(current, count);
-            current = sorted_points[i];
+            current = points[i];
             count = 1;
         }
     }
@@ -40,6 +34,22 @@ std::vector<std::pair<int, int>> runLengthEncoding(std::vector<int>& points) {
 
     return result;
 }
+
+// Faster?
+// std::vector<std::pair<int, int>> runLengthEncoding(const std::vector<int>& points) {
+//     std::unordered_map<int, int> counts;
+//     for (int point : points) {
+//         counts[point]++;
+//     }
+
+//     std::vector<std::pair<int, int>> result;
+//     result.reserve(counts.size());
+//     for (const auto& kv : counts) {
+//         result.emplace_back(kv.first, kv.second);
+//     }
+
+//     return result;
+// }
 
 std::vector<std::pair<int, int>> runLengthEncoding(
     const Eigen::Ref<const Eigen::VectorXi>& points) {
@@ -426,4 +436,44 @@ Bounds<int> get_bounds(const std::vector<std::pair<Point<int>, int>>& points) {
     }
 
     return Bounds<int>(min_x, max_x, min_y, max_y);
+}
+
+std::pair<std::vector<std::pair<int, int>>, std::vector<std::pair<int, int>>>
+remove_zi_aggregated(const std::vector<std::pair<int, int>> &x1,
+                     const std::vector<std::pair<int, int>> &x2,
+                     double alpha1, double alpha2) {
+
+    assert(x1.size() == x2.size() && "Input vectors must be aligned and of the same size");
+
+    std::vector<std::pair<int, int>> new_x1;
+    std::vector<std::pair<int, int>> new_x2;
+
+    new_x1.reserve(x1.size());
+    new_x2.reserve(x2.size());
+
+    std::random_device rd;
+    std::mt19937 gen(rd());
+
+    // For each block (aggregated pair) we thin the count when the partner value is zero.
+    for (size_t i = 0; i < x1.size(); ++i) {
+        int count1 = x1[i].second;
+        int count2 = x2[i].second;
+        // If x2 is zero, thin the corresponding x1 count using probability alpha1.
+        if (x2[i].first == 0) {
+            std::binomial_distribution<> d(count1, 1.0 - alpha1);
+            count1 = d(gen);
+        }
+        // If x1 is zero, thin the corresponding x2 count using probability alpha2.
+        if (x1[i].first == 0) {
+            std::binomial_distribution<> d(count2, 1.0 - alpha2);
+            count2 = d(gen);
+        }
+        // Only keep pairs with a positive count.
+        if (count1 > 0)
+            new_x1.push_back({x1[i].first, count1});
+        if (count2 > 0)
+            new_x2.push_back({x2[i].first, count2});
+    }
+
+    return std::make_pair(new_x1, new_x2);
 }

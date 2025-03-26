@@ -10,6 +10,17 @@ PYBIND11_MODULE(fast_mutual_information, m) {
     m.doc() = "Python bindings for fast mutual information computation.";
 
     m.def(
+        "mi_binarised",
+        [](Eigen::MatrixXi& samples) -> Eigen::MatrixXd {
+            return mutual_information_binarised(samples);
+        },
+        py::arg("samples"),
+        "Fast binarised mutual information computation.\n\n"
+        "    data (np.array): Data array of shape (Nsamples, Nfeatures).\n"
+        "Returns:\n"
+        "    float: The mutual information.");
+
+    m.def(
         "mi_normal",
         [](double mean1, double std_dev1, double mean2, double std_dev2,
            Eigen::MatrixXd& data, int min_pop) -> double {

@@ -472,3 +472,32 @@ Eigen::MatrixXd mutual_information_normal(Eigen::MatrixXi& samples,
 
     return results;
 }
+
+double mutual_information_binarised(Eigen::VectorXi f1, Eigen::VectorXi f2) {
+
+    double mi = 0.0;
+
+    // Operate on the feature vectors f1, f2 here
+    // Try and use Eigen operations if you can as they are faster!
+
+    return mi;
+}
+
+Eigen::MatrixXd mutual_information_binarised(Eigen::MatrixXi& samples) {
+
+    Eigen::MatrixXd results(samples.cols(), samples.cols());
+
+#pragma omp parallel for
+    for (int i = 0; i < samples.cols(); i++) {
+        for (int j = i + 1; j < samples.cols(); j++) {
+
+            Eigen::VectorXi f1 = samples.col(i);
+            Eigen::VectorXi f2 = samples.col(j);
+
+            // This is overloaded to take two Eigen::VectorXi, rather than a matrix
+            results(i, j) = mutual_information_binarised(f1, f2);
+        }
+    }
+
+    return results;
+}

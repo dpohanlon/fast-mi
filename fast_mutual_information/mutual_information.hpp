@@ -477,8 +477,43 @@ double mutual_information_binarised(Eigen::VectorXi f1, Eigen::VectorXi f2) {
 
     double mi = 0.0;
 
-    // Operate on the feature vectors f1, f2 here
-    // Try and use Eigen operations if you can as they are faster!
+    // Ensure the input features are binary and the same size
+    if (f1.size() != f2.size()) {
+        throw std::invalid_argument("Input features f1 and f2 are not the same size.");
+    }
+
+    int n = f1.size(); // Length of the vectors
+
+    // Calculate marginal probabilities for f1 and f2, based on co-occurrences
+    double f1_0 = 0, f1_1 = 0, f2_0 = 0, f2_1 = 0, p11 = 0, p00 = 0, p10 = 0, p01 = 0;
+
+    for (int i = 0; i < n; i++) {
+        f1_0 += (f1[i] == 0);
+        f1_1 += (f1[i] == 1);
+        f2_0 += (f2[i] == 0);
+        f2_1 += (f2[i] == 1);
+        
+        if (f1[i] == 0 && f2[i] == 0) p00++;
+        if (f1[i] == 0 && f2[i] == 1) p01++;
+        if (f1[i] == 1 && f2[i] == 0) p10++;
+        if (f1[i] == 1 && f2[i] == 1) p11++;
+    }
+
+    f1_0 /= n;
+    f1_1 /= n;
+    f2_0 /= n;
+    f2_1 /= n;
+    p00 /= n;
+    p01 /= n;
+    p10 /= n;
+    p11 /= n;
+
+    // Sum over each co-occurrence making sure only valid terms are calculated
+
+    if (p00 > 0 && f1_0 > 0 && f2_0 > 0) mi += p00 * log(p00 / (f1_0 * f2_0));
+    if (p01 > 0 && f1_0 > 0 && f2_1 > 0) mi += p01 * log(p01 / (f1_0 * f2_1));
+    if (p10 > 0 && f1_1 > 0 && f2_0 > 0) mi += p10 * log(p10 / (f1_1 * f2_0));
+    if (p11 > 0 && f1_1 > 0 && f2_1 > 0) mi += p11 * log(p11 / (f1_1 * f2_1));
 
     return mi;
 }

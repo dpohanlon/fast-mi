@@ -11,14 +11,17 @@
 #include <numeric>
 #include <unordered_map>
 #include <vector>
+#include <fstream>
 
 #include "copula.hpp"
 #include "point.hpp"
 #include "utils.hpp"
 
+// #define DEBUG
+
 template <typename T>
 struct KDNode {
-    // Use bounds struct here
+
     Bounds<T> bounds;
 
     std::vector<std::pair<Point<T>, int>> points;
@@ -93,10 +96,10 @@ class KDTree {
     KDTree() {}
 
     KDTree(const std::vector<Point<T>>& points, Copula<T>* copula,
-           int max_points_per_leaf = 10);
+           int min_points_per_leaf = 10, bool zi = false);
 
     KDTree(std::vector<std::pair<Point<int>, int>>& unique_points, int nPoints,
-           Bounds<int> bounds, Copula<int>* copula, int max_points_per_leaf);
+           Bounds<int> bounds, Copula<int>* copula, int min_points_per_leaf, bool zi = false);
 
     double get_correction() const {
         int depth = get_tree_depth();
@@ -130,14 +133,19 @@ class KDTree {
 
     int get_tree_depth() const { return calculate_depth(root.get()); }
 
+    void dumpSplittingValuesToCSV(const std::string &filename) const;
+
    private:
     std::unique_ptr<KDNode<T>> root;
-    int max_points;
+    int min_points;
     int total_count;
+    bool zi;
 
     Copula<T>* copula;
 
     double get_bin_area(const KDNode<T>& node) const;
+
+    void dumpSplittingValuesHelper(const KDNode<T>* node, std::ofstream &out, int depth) const;
 
     // For ints this can be optimised by sorting!
 
@@ -185,7 +193,7 @@ class KDTree {
 
         // boost::sort::spreadsort::integer_sort(sorted_points.begin(),
         // sorted_points.end(),
-        //                                      boost::sort::spreadsort::integer_traits<Point<int>>::base());
+        // boost::sort::spreadsort::integer_traits<Point<int>>::base());
 
         std::vector<std::pair<Point<int>, int>> result;
         Point<int> current = sorted_points[0];
@@ -204,9 +212,18 @@ class KDTree {
         return result;
     }
 
+    int aggregate_count(const std::vector<std::pair<Point<T>, int>>& pts) {
+        int sum = 0;
+        for (const auto &p : pts) {
+            sum += p.second;
+        }
+        return sum;
+    };
+
     std::unique_ptr<KDNode<T>> build(
-        std::vector<std::pair<Point<T>, int>>& points, int depth,
-        Bounds<T> bounds) {
+            std::vector<std::pair<Point<T>, int>>& points, int depth,
+            Bounds<T> bounds, bool zi = false) {
+
         auto node = std::make_unique<KDNode<T>>();
         node->bounds = bounds;
 
@@ -216,8 +233,10 @@ class KDTree {
         // This is controlled by the number of points rather than the number of
         // points including the duplicates as we don't want to end up with
         // nowhere to split
-        if (points.size() <= static_cast<size_t>(max_points) ||
+        if (points.size() <= static_cast<size_t>(min_points) ||
             degenerate_split) {
+        // int total_agg = aggregate_count(points);
+        // if (total_agg <= min_points || degenerate_split) {
             node->is_leaf = true;
             node->points = points;
             return node;
@@ -226,77 +245,86 @@ class KDTree {
         int axis = depth % 2;
         node->split_dim = axis;
 
-        if (axis == 0) {
-            std::nth_element(points.begin(), points.begin() + points.size() / 2,
-                             points.end(),
-                             [](const std::pair<Point<T>, int>& a,
-                                const std::pair<Point<T>, int>& b) -> bool {
-                                 return a.first.x < b.first.x;
-                             });
+        T median_val;
+        if (false && zi && ((axis == 0 && depth == 0) || (axis == 1 && depth == 1))) {
+            // Force a split between 0 and 1 (i.e., at 0.5) to separate zero from nonzero values.
+            median_val = static_cast<T>(1);
         } else {
-            std::nth_element(points.begin(), points.begin() + points.size() / 2,
-                             points.end(),
-                             [](const std::pair<Point<T>, int>& a,
-                                const std::pair<Point<T>, int>& b) -> bool {
-                                 return a.first.y < b.first.y;
-                             });
+            if (axis == 0) {
+                std::nth_element(points.begin(), points.begin() + points.size() / 2,
+                                   points.end(),
+                                   [](const std::pair<Point<T>, int>& a,
+                                      const std::pair<Point<T>, int>& b) -> bool {
+                                       return a.first.x < b.first.x;
+                                   });
+            } else {
+                std::nth_element(points.begin(), points.begin() + points.size() / 2,
+                                   points.end(),
+                                   [](const std::pair<Point<T>, int>& a,
+                                      const std::pair<Point<T>, int>& b) -> bool {
+                                       return a.first.y < b.first.y;
+                                   });
+            }
+            size_t median_idx = points.size() / 2;
+            median_val = (axis == 0) ? points[median_idx].first.x : points[median_idx].first.y;
         }
-
-        size_t median_idx = points.size() / 2;
-        T median_val = (axis == 0) ? points[median_idx].first.x
-                                   : points[median_idx].first.y;
         node->split_val = median_val;
 
         std::vector<std::pair<Point<T>, int>> left_points;
         std::vector<std::pair<Point<T>, int>> right_points;
 
         for (const auto& p : points) {
-            T coord = (axis == 0) ? p.first.x : p.first.y;
-            if (coord < median_val) {
+            T coord = (axis == 0 ? p.first.x : p.first.y);
+            if (coord < median_val)
                 left_points.emplace_back(p);
-            } else if (coord > median_val) {
+            else
                 right_points.emplace_back(p);
+        }
+
+        if (left_points.empty() || right_points.empty()) {
+            node->is_leaf = true;
+            node->points  = points;      // keep original points
+            return node;                 // stop splitting
+        }
+
+        // int left_agg = aggregate_count(left_points);
+        // int right_agg = aggregate_count(right_points);
+        // if (left_agg == 0 || right_agg == 0) {
+        //     // The candidate split would leave one side empty, so do not split.
+        //     node->is_leaf = true;
+        //     node->points = points;
+        //     return node;
+        // }
+
+        Bounds<T> left_bounds = bounds;
+        Bounds<T> right_bounds = bounds;
+
+        if (axis == 0) {
+            if (std::is_integral<T>::value) {
+                // half‐open integer split: left ≤ median_val–1, right ≥ median_val
+                left_bounds .max_x = median_val - 1;
+                right_bounds.min_x = median_val;
             } else {
-                if (left_points.size() <= right_points.size()) {
-                    left_points.emplace_back(p);
-                } else {
-                    right_points.emplace_back(p);
-                }
+                // floating‐point split remains closed on left, open on right
+                left_bounds .max_x = median_val;
+                right_bounds.min_x = median_val;
+            }
+        } else {
+            if (std::is_integral<T>::value) {
+                left_bounds .max_y = median_val - 1;
+                right_bounds.min_y = median_val;
+            } else {
+                left_bounds .max_y = median_val;
+                right_bounds.min_y = median_val;
             }
         }
 
-        // Handle potential empty subsets by enforcing the bounding box split
-
-        Bounds<T> left_bounds;
-        left_bounds.min_x = bounds.min_x;
-        left_bounds.max_x = (axis == 0 ? median_val : bounds.max_x);
-        left_bounds.min_y = bounds.min_y;
-        left_bounds.max_y = (axis == 1 ? median_val : bounds.max_y);
-
-        // left_bounds not bounds?
         if (!left_points.empty()) {
-            node->left = build(left_points, depth + 1, left_bounds);
-        } else {
-            auto leaf = std::make_unique<KDNode<T>>();
-            leaf->is_leaf = true;
-            leaf->bounds = left_bounds;
-            node->left = std::move(leaf);
+            node->left = build(left_points, depth + 1, left_bounds, zi);
         }
 
-        Bounds<T> right_bounds;
-        right_bounds.min_x = (axis == 0 ? median_val : bounds.min_x);
-        right_bounds.max_x = bounds.max_x;
-        right_bounds.min_y = (axis == 1 ? median_val : bounds.min_y);
-        right_bounds.max_y = bounds.max_y;
-
-        // right_bounds not bounds?
         if (!right_points.empty()) {
-            node->right = build(right_points, depth + 1, right_bounds);
-        } else {
-            auto leaf = std::make_unique<KDNode<T>>();
-            leaf->is_leaf = true;
-            leaf->bounds = right_bounds;
-            node->right = std::move(leaf);
+            node->right = build(right_points, depth + 1, right_bounds, zi);
         }
 
         return node;
@@ -327,6 +355,7 @@ class KDTree {
 
         if (node->is_leaf) {
             int bin_count = node->total_counts();
+            if (bin_count == 0) return;
 
             double bin_area = this->get_bin_area(*node);
 
@@ -359,8 +388,8 @@ class KDTree {
 
 template <typename T>
 KDTree<T>::KDTree(const std::vector<Point<T>>& points, Copula<T>* copula,
-                  int max_points_per_leaf)
-    : max_points(max_points_per_leaf), copula(copula) {
+                  int min_points_per_leaf, bool zi)
+    : min_points(min_points_per_leaf), copula(copula), zi(zi) {
     total_count = points.size();
 
     std::vector<std::pair<Point<T>, int>> unique_points;
@@ -376,13 +405,17 @@ KDTree<T>::KDTree(const std::vector<Point<T>>& points, Copula<T>* copula,
 
     Bounds<T> bounds = {0.0, 1.0, 0.0, 1.0};
 
-    root = build(unique_points, 0, bounds);
+    root = build(unique_points, 0, bounds, zi);
+
+    #ifdef DEBUG
+    this->dumpSplittingValuesToCSV("debug_splits.csv");
+    #endif
 }
 
 template <>
 KDTree<int>::KDTree(const std::vector<Point<int>>& points, Copula<int>* copula,
-                    int max_points_per_leaf)
-    : max_points(max_points_per_leaf), copula(copula) {
+                    int min_points_per_leaf, bool zi)
+    : min_points(min_points_per_leaf), copula(copula), zi(zi) {
     total_count = points.size();
 
     std::vector<std::pair<Point<int>, int>> unique_points =
@@ -393,7 +426,11 @@ KDTree<int>::KDTree(const std::vector<Point<int>>& points, Copula<int>* copula,
 
     Bounds<int> bounds = get_bounds(points);
 
-    root = build(unique_points, 0, bounds);
+    root = build(unique_points, 0, bounds, zi);
+
+    #ifdef DEBUG
+    this->dumpSplittingValuesToCSV("debug_splits.csv");
+    #endif
 }
 
 // For pre-calculated duplicates on RLE vectors - would be nice to make this
@@ -401,9 +438,13 @@ KDTree<int>::KDTree(const std::vector<Point<int>>& points, Copula<int>* copula,
 template <>
 KDTree<int>::KDTree(std::vector<std::pair<Point<int>, int>>& unique_points,
                     int nPoints, Bounds<int> bounds, Copula<int>* copula,
-                    int max_points_per_leaf)
-    : max_points(max_points_per_leaf), copula(copula) {
-    root = build(unique_points, 0, bounds);
+                    int min_points_per_leaf, bool zi)
+    : min_points(min_points_per_leaf), copula(copula), zi(zi) {
+    root = build(unique_points, 0, bounds, zi);
+
+    #ifdef DEBUG
+    this->dumpSplittingValuesToCSV("debug_splits.csv");
+    #endif
 }
 
 template <typename T>
@@ -411,19 +452,72 @@ double KDTree<T>::get_bin_area(const KDNode<T>& node) const {
     return node.get_bin_area();
 }
 
+// template <>
+// double KDTree<int>::get_bin_area(const KDNode<int>& node) const {
+//     // Transform to the uniform distribution via the CDF, to get
+//     // the area in U[0, 1] space
+
+//     double x_min = this->copula->cdf_x(node.bounds.min_x);
+//     double x_max = this->copula->cdf_x(node.bounds.max_x);
+
+//     double y_min = this->copula->cdf_y(node.bounds.min_y);
+//     double y_max = this->copula->cdf_y(node.bounds.max_y);
+
+//     double width = x_max - x_min;
+//     double height = y_max - y_min;
+
+//     return width * height;
+// }
+
 template <>
 double KDTree<int>::get_bin_area(const KDNode<int>& node) const {
-    // Transform to the uniform distribution via the CDF, to get
-    // the area in U[0, 1] space
+    // lower CDF edge = F(k-1), but clamp at zero
+    int lo_x = node.bounds.min_x - 1;
+    int lo_y = node.bounds.min_y - 1;
+    double x_min = (lo_x >= 0 ? copula->cdf_x(lo_x) : 0.0);
+    double y_min = (lo_y >= 0 ? copula->cdf_y(lo_y) : 0.0);
 
-    double x_min = this->copula->cdf_x(node.bounds.min_x);
-    double x_max = this->copula->cdf_x(node.bounds.max_x);
+    // upper edge always = F(k)
+    double x_max = copula->cdf_x(node.bounds.max_x);
+    double y_max = copula->cdf_y(node.bounds.max_y);
 
-    double y_min = this->copula->cdf_y(node.bounds.min_y);
-    double y_max = this->copula->cdf_y(node.bounds.max_y);
-
-    double width = x_max - x_min;
+    double width  = x_max - x_min;
     double height = y_max - y_min;
-
     return width * height;
+}
+
+template <typename T>
+void KDTree<T>::dumpSplittingValuesToCSV(const std::string &filename) const {
+    std::ofstream out(filename);
+    if (!out) {
+        std::cerr << "Error opening file for dump: " << filename << std::endl;
+        return;
+    }
+
+    out << "depth,split_dim,split_val,is_leaf,min_x,max_x,min_y,max_y\n";
+    dumpSplittingValuesHelper(root.get(), out, 0);
+    out.close();
+}
+
+template <typename T>
+void KDTree<T>::dumpSplittingValuesHelper(const KDNode<T>* node, std::ofstream &out, int depth) const {
+    if (!node) return;
+
+    // Output current node info:
+    out << depth << ",";
+
+    // For non-leaf nodes, write the splitting info; for leaf nodes, indicate not applicable.
+    if (!node->is_leaf) {
+        out << node->split_dim << "," << node->split_val;
+    } else {
+        out << "-1,NA"; // using -1 for split_dim and "NA" for split_val if leaf node.
+    }
+    out << "," << (node->is_leaf ? "true" : "false") << ",";
+    // Output the bounding box values.
+    out << node->bounds.min_x << "," << node->bounds.max_x << ",";
+    out << node->bounds.min_y << "," << node->bounds.max_y << "\n";
+
+    // Recursively dump left and right subtrees.
+    dumpSplittingValuesHelper(node->left.get(), out, depth + 1);
+    dumpSplittingValuesHelper(node->right.get(), out, depth + 1);
 }

@@ -25,13 +25,14 @@ class MutualInformation {
 
     ~MutualInformation() { delete this->copula; }
 
-    MutualInformation(std::vector<Point<T>>& data, int min_pop = 10) {
+    MutualInformation(std::vector<Point<T>>& data, int min_pop = 10,
+                      bool zi = false) : zi(zi) {
         this->copula = new Copula<T>();
         this->setData(data, min_pop);
     }
 
     MutualInformation(std::vector<std::pair<Point<int>, int>>& data,
-                      int nPoints, Bounds<int> bounds, int max_points_per_leaf);
+                      int nPoints, Bounds<int> bounds, int max_points_per_leaf, bool zi = false);
 
     void setNormalCopula(double mean1, double std_dev1, double mean2,
                          double std_dev2) {
@@ -52,13 +53,13 @@ class MutualInformation {
     }
 
     void setData(const std::vector<Point<T>>& data, int min_pop = 10) {
-        this->tree = KDTree<T>(data, this->copula, min_pop);
+        this->tree = KDTree<T>(data, this->copula, min_pop, this->zi);
     }
 
     void setData(std::vector<std::pair<Point<int>, int>>& data, int nPoints,
                  Bounds<int> bounds, int min_pop = 10) {
         // Use the RLE constructor
-        this->tree = KDTree<T>(data, nPoints, bounds, this->copula, min_pop);
+        this->tree = KDTree<T>(data, nPoints, bounds, this->copula, min_pop, this->zi);
     }
 
     void setNormalPMF(double mean1, double std_dev1, double mean2,
@@ -122,13 +123,14 @@ class MutualInformation {
 
    private:
     KDTree<T> tree;
-    // Copula<T>* copula;
+    bool zi = false;
+
 };
 
 template <>
 MutualInformation<int>::MutualInformation(
     std::vector<std::pair<Point<int>, int>>& data, int nPoints,
-    Bounds<int> bounds, int max_points_per_leaf) {
+    Bounds<int> bounds, int max_points_per_leaf, bool zi) : zi(zi) {
     this->copula = new Copula<int>();
     this->setData(data, nPoints, bounds, max_points_per_leaf);
 }
@@ -345,7 +347,7 @@ double mutual_information_zinb(double mean1, double conc1, double alpha1, double
     auto cdf_x = [=](int x) -> double { return zinb2_cdf_single(x, mean1, conc1, alpha1); };
     auto cdf_y = [=](int y) -> double { return zinb2_cdf_single(y, mean2, conc2, alpha2); };
 
-    MutualInformation<int> mi(data, min_pop);
+    MutualInformation<int> mi(data, min_pop, true);
     mi.setCDF(cdf_x, cdf_y);
 
     return mi.mutual_information();

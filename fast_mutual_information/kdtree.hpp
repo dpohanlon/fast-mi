@@ -162,14 +162,6 @@ class KDTree {
             result.emplace_back(entry.first, entry.second);
         }
 
-        // These will be sorted when splitting anyway
-
-        // To match the lexicographical order from the sorting version.
-        // std::sort(result.begin(), result.end(), [](const auto& a, const auto&
-        // b) {
-        //     return a.first < b.first;
-        // });
-
         return result;
     }
 
@@ -183,17 +175,6 @@ class KDTree {
                   [](const Point<int>& a, const Point<int>& b) {
                       return (a.x < b.x) || ((a.x == b.x) && (a.y < b.y));
                   });
-
-        // std::stable_sort(sorted_points.begin(), sorted_points.end(), [](const
-        // Point<int>& a, const Point<int>& b) {
-        //     if (a.x != b.x)
-        //         return a.x < b.x;
-        //     return a.y < b.y;
-        // });
-
-        // boost::sort::spreadsort::integer_sort(sorted_points.begin(),
-        // sorted_points.end(),
-        // boost::sort::spreadsort::integer_traits<Point<int>>::base());
 
         std::vector<std::pair<Point<int>, int>> result;
         Point<int> current = sorted_points[0];
@@ -452,22 +433,6 @@ double KDTree<T>::get_bin_area(const KDNode<T>& node) const {
     return node.get_bin_area();
 }
 
-// template <>
-// double KDTree<int>::get_bin_area(const KDNode<int>& node) const {
-//     // Transform to the uniform distribution via the CDF, to get
-//     // the area in U[0, 1] space
-
-//     double x_min = this->copula->cdf_x(node.bounds.min_x);
-//     double x_max = this->copula->cdf_x(node.bounds.max_x);
-
-//     double y_min = this->copula->cdf_y(node.bounds.min_y);
-//     double y_max = this->copula->cdf_y(node.bounds.max_y);
-
-//     double width = x_max - x_min;
-//     double height = y_max - y_min;
-
-//     return width * height;
-// }
 
 template <>
 double KDTree<int>::get_bin_area(const KDNode<int>& node) const {

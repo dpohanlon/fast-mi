@@ -22,6 +22,18 @@ PYBIND11_MODULE(fast_mutual_information, m) {
         "Fast mutual information using the naive discrete ML estimator.\n\n"
         "Parameters:\n"
         "    data (np.array): Data array of shape (Nsamples, Nfeatures).\n"
+        "Returns:\n"
+        "    float: The mutual information.");
+
+    m.def(
+        "mi_binarised",
+        [](Eigen::MatrixXi& samples) -> Eigen::MatrixXd {
+            return mutual_information_binarised(samples);
+        },
+        py::arg("samples"),
+        "Fast binarised mutual information computation.\n\n"
+        "    data (np.array): Data array of shape (Nsamples, Nfeatures).\n"
+        "Returns:\n"
         "    float: The mutual information.");
 
     m.def(

@@ -4,6 +4,9 @@
 
 #include <Eigen/Dense>
 #include <functional>
+#include <unordered_map>
+#include <Eigen/Sparse>
+#include <cstdint>
 
 #include "copula.hpp"
 #include "fast_negative_binomial/fast_nb.hpp"
@@ -22,13 +25,14 @@ class MutualInformation {
 
     ~MutualInformation() { delete this->copula; }
 
-    MutualInformation(std::vector<Point<T>>& data, int min_pop = 10) {
+    MutualInformation(std::vector<Point<T>>& data, int min_pop = 10,
+                      bool zi = false) : zi(zi) {
         this->copula = new Copula<T>();
         this->setData(data, min_pop);
     }
 
     MutualInformation(std::vector<std::pair<Point<int>, int>>& data,
-                      int nPoints, Bounds<int> bounds, int max_points_per_leaf);
+                      int nPoints, Bounds<int> bounds, int max_points_per_leaf, bool zi = false);
 
     void setNormalCopula(double mean1, double std_dev1, double mean2,
                          double std_dev2) {
@@ -49,13 +53,13 @@ class MutualInformation {
     }
 
     void setData(const std::vector<Point<T>>& data, int min_pop = 10) {
-        this->tree = KDTree<T>(data, this->copula, min_pop);
+        this->tree = KDTree<T>(data, this->copula, min_pop, this->zi);
     }
 
     void setData(std::vector<std::pair<Point<int>, int>>& data, int nPoints,
                  Bounds<int> bounds, int min_pop = 10) {
         // Use the RLE constructor
-        this->tree = KDTree<T>(data, nPoints, bounds, this->copula, min_pop);
+        this->tree = KDTree<T>(data, nPoints, bounds, this->copula, min_pop, this->zi);
     }
 
     void setNormalPMF(double mean1, double std_dev1, double mean2,
@@ -115,15 +119,18 @@ class MutualInformation {
         return tree.compute_mutual_information();
     }
 
+    Copula<T>* copula;
+
    private:
     KDTree<T> tree;
-    Copula<T>* copula;
+    bool zi = false;
+
 };
 
 template <>
 MutualInformation<int>::MutualInformation(
     std::vector<std::pair<Point<int>, int>>& data, int nPoints,
-    Bounds<int> bounds, int max_points_per_leaf) {
+    Bounds<int> bounds, int max_points_per_leaf, bool zi) : zi(zi) {
     this->copula = new Copula<int>();
     this->setData(data, nPoints, bounds, max_points_per_leaf);
 }
@@ -139,6 +146,100 @@ double mutual_information(std::vector<Point<T>>& data, int min_pop = 25) {
 
     return mi.mutual_information();
 }
+
+// Add this custom hash for std::pair (if not already defined)
+struct pair_hash {
+    std::size_t operator()(const std::pair<int, int>& p) const {
+        return std::hash<int>()(p.first) ^ (std::hash<int>()(p.second) << 1);
+    }
+};
+
+Eigen::Matrix<uint8_t, Eigen::Dynamic, 1> quantize_vector_straight(const Eigen::VectorXi &v) {
+    const int n = v.size();
+    Eigen::Matrix<uint8_t, Eigen::Dynamic, 1> vq(n);
+    for (int i = 0; i < n; ++i) {
+        vq(i) = static_cast<uint8_t>(v(i));
+    }
+    return vq;
+}
+
+std::vector<std::pair<int, int>> sort_pairs(const std::vector<int>& x, const std::vector<int>& y) {
+    assert(x.size() == y.size() && "Input vectors must be of equal length");
+    std::vector<std::pair<int, int>> pairs;
+    pairs.reserve(x.size());
+    for (size_t i = 0; i < x.size(); ++i) {
+        pairs.emplace_back(x[i], y[i]);
+    }
+    // Sort pairs lexicographically: first by the first element, then by the second.
+    std::sort(pairs.begin(), pairs.end(), [](const std::pair<int, int>& a, const std::pair<int, int>& b) {
+        return (a.first < b.first) || ((a.first == b.first) && (a.second < b.second));
+    });
+    return pairs;
+}
+
+std::vector<int> eigenVectorToStdVector(const Eigen::VectorXi &eigen_vec) {
+    // Use the pointer to the first element and the pointer past the last element.
+    return std::vector<int>(eigen_vec.data(), eigen_vec.data() + eigen_vec.size());
+}
+
+float mutual_information_ml(const Eigen::VectorXi &x, const Eigen::VectorXi &y) {
+    assert(x.size() == y.size() && "Input vectors must be of equal length");
+    const int n = x.size();
+    if(n == 0) return 0.0;
+
+    sort_pairs(eigenVectorToStdVector(x), eigenVectorToStdVector(y));
+
+    // Quantize the input vectors using a straight type cast.
+    Eigen::Matrix<uint8_t, Eigen::Dynamic, 1> xq = quantize_vector_straight(x);
+    Eigen::Matrix<uint8_t, Eigen::Dynamic, 1> yq = quantize_vector_straight(y);
+
+    // Determine the maximum values in the quantized vectors (should be <= 255).
+    const int max_x = static_cast<int>(xq.maxCoeff());
+    const int max_y = static_cast<int>(yq.maxCoeff());
+
+    // Create a joint distribution matrix using uint8.
+    // Note: This matrix's counts are stored as uint8 and can overflow if n > 255.
+    Eigen::Matrix<uint8_t, Eigen::Dynamic, Eigen::Dynamic> joint(max_x + 1, max_y + 1);
+    joint.setZero();
+
+    // Accumulate joint counts.
+    for (int i = 0; i < n; ++i) {
+        joint(static_cast<int>(xq(i)), static_cast<int>(yq(i)))++;
+    }
+
+    // Compute marginal counts. These are also computed as uint8.
+    // Eigen::Matrix<uint8_t, Eigen::Dynamic, 1> rowSums(max_x + 1);
+    // Eigen::Matrix<uint8_t, Eigen::Dynamic, 1> colSums(max_y + 1);
+    // rowSums.setZero();
+    // colSums.setZero();
+
+    // for (int i = 0; i <= max_x; ++i) {
+    //     for (int j = 0; j <= max_y; ++j) {
+    //         rowSums(i) += joint(i, j);
+    //     }
+    // }
+    // for (int j = 0; j <= max_y; ++j) {
+    //     for (int i = 0; i <= max_x; ++i) {
+    //         colSums(j) += joint(i, j);
+    //     }
+    // }
+
+    // Compute the mutual information.
+    double MI = 0.0;
+    for (int i = 0; i <= max_x; ++i) {
+        for (int j = 0; j <= max_y; ++j) {
+            uint8_t count = joint(i, j);
+            if (count > 0) {
+                float p_xy = static_cast<float>(count) / n;
+                float p_x  = 1.0; //static_cast<double>(rowSums(i)) / n;
+                float p_y  = 1.0; //static_cast<double>(colSums(j)) / n;
+                MI += p_xy * std::log(p_xy / (p_x * p_y));
+            }
+        }
+    }
+    return MI;
+}
+
 
 // Pass normal parameters so the CDF can be calculated on the fly
 template <typename T>
@@ -159,7 +260,7 @@ double mutual_information_normal(double mean1, double std_dev1, double mean2,
                                  int nPoints, Bounds<int> bounds,
                                  int min_pop = 25) {
     MutualInformation<int> mi(data, nPoints, bounds, min_pop);
-    mi.setNormalCDF(mean1, std_dev1, mean2, std_dev2);
+    mi.setNormalCopula(mean1, std_dev1, mean2, std_dev2);
 
     return mi.mutual_information();
 }
@@ -173,7 +274,6 @@ double mutual_information_normal(Eigen::MatrixXd& data, int min_pop = 25) {
 double mutual_information_normal(double mean1, double std_dev1, double mean2,
                                  double std_dev2, Eigen::MatrixXd& data,
                                  int min_pop = 25) {
-    // std::cout << "THIS ONE!?" << std::endl;
 
     Eigen::VectorXd mean(2);
     mean << mean1, mean2;
@@ -188,43 +288,24 @@ double mutual_information_normal(double mean1, double std_dev1, double mean2,
     std::vector<Point<double>> point_samples =
         convertSamplesToPoints(uniform_samples);
 
-    // std::cout << point_samples.size() << std::endl;
-    // std::cout << point_samples[0].x << " " << point_samples[0].y <<
-    // std::endl;
-
     return mutual_information(point_samples, min_pop);
 }
 
+template <typename T>
 double mutual_information_normal(double mean1, double std_dev1, double mean2,
-                                 double std_dev2, Eigen::VectorXd& data1,
-                                 Eigen::VectorXd& data2, int min_pop = 25) {
-    Eigen::VectorXd uniform_samples1 =
-        transformToUniform(data1, mean1, std_dev1);
-    Eigen::VectorXd uniform_samples2 =
-        transformToUniform(data2, mean2, std_dev2);
+                                 double std_dev2, const T& data1,
+                                 const T& data2, int min_pop = 25) {
 
+    Eigen::VectorXd uniform_samples1 = transformToUniform(data1, mean1, std_dev1);
+    Eigen::VectorXd uniform_samples2 = transformToUniform(data2, mean2, std_dev2);
+
+    // Convert the uniform samples to points.
     std::vector<Point<double>> point_samples =
         convertSamplesToPoints(uniform_samples1, uniform_samples2);
 
     return mutual_information(point_samples, min_pop);
 }
 
-// TODO: Find a better way to integrate all of these parameters, particularly
-// the total number of points and the overall bounds
-double mutual_information_quantised_rle(double mean1, double std_dev1,
-                                        double mean2, double std_dev2,
-                                        std::vector<std::pair<int, int>> rle1,
-                                        std::vector<std::pair<int, int>> rle2,
-                                        int nPoints, int min_pop = 25) {
-    std::vector<std::pair<Point<int>, int>> point_samples =
-        runLengthDecoding(rle1, rle2);
-
-    // A little inefficient, as we can cache these per feature separately
-    Bounds<int> bounds = get_bounds(point_samples);
-
-    return mutual_information_normal(mean1, std_dev1, mean2, std_dev2,
-                                     point_samples, nPoints, bounds, min_pop);
-}
 
 double mutual_information_quantised(double mean1, double std_dev1, double mean2,
                                     double std_dev2, Eigen::MatrixXd& data,
@@ -246,41 +327,12 @@ double mutual_information_quantised(double mean1, double std_dev1, double mean2,
                                      point_samples, min_pop);
 }
 
-// Mutual information with NB distributed marginals
-double mutual_information_nb(double mean1, double conc1, double mean2,
-                             double conc2,
-                             std::vector<std::pair<Point<int>, int>>& data,
-                             int nPoints, Bounds<int> bounds,
-                             int min_pop = 10) {
-    auto cdf_x = [=](double x) -> double { return nb2_base(x, mean1, conc1); };
-    auto cdf_y = [=](double y) -> double { return nb2_base(y, mean2, conc2); };
-
-    MutualInformation<int> mi(data, nPoints, bounds, min_pop);
-    mi.setCDF(cdf_x, cdf_y);
-
-    return mi.mutual_information();
-}
-
-double mutual_information_zinb(double mean1, double conc1, double mean2,
-                             double conc2, double alpha1, double alpha2,
-                             std::vector<std::pair<Point<int>, int>>& data,
-                             int nPoints, Bounds<int> bounds,
-                             int min_pop = 10) {
-    auto cdf_x = [=](double x) -> double { return zinb2_base(x, mean1, conc1, alpha1); };
-    auto cdf_y = [=](double y) -> double { return zinb2_base(y, mean2, conc2, alpha2); };
-
-    MutualInformation<int> mi(data, nPoints, bounds, min_pop);
-    mi.setCDF(cdf_x, cdf_y);
-
-    return mi.mutual_information();
-}
-
-// Without RLE
+// Without RLE, 3
 double mutual_information_nb(double mean1, double conc1, double mean2,
                              double conc2, std::vector<Point<int>>& data,
-                             int min_pop = 10) {
-    auto cdf_x = [=](double x) -> double { return nb2_base(x, mean1, conc1); };
-    auto cdf_y = [=](double y) -> double { return nb2_base(y, mean2, conc2); };
+                             int min_pop = 25) {
+    auto cdf_x = [=](int x) -> double { return nb2_cdf_single(x, mean1, conc1); };
+    auto cdf_y = [=](int y) -> double { return nb2_cdf_single(y, mean2, conc2); };
 
     MutualInformation<int> mi(data, min_pop);
     mi.setCDF(cdf_x, cdf_y);
@@ -288,32 +340,55 @@ double mutual_information_nb(double mean1, double conc1, double mean2,
     return mi.mutual_information();
 }
 
-double mutual_information_nb_quantised_rle(
-    double mean1, double conc1, double mean2, double conc2,
-    std::vector<std::pair<int, int>> rle1,
-    std::vector<std::pair<int, int>> rle2, int nPoints, int min_pop = 25) {
-    std::vector<std::pair<Point<int>, int>> point_samples =
-        runLengthDecoding(rle1, rle2);
+// Without RLE, 3
+double mutual_information_zinb(double mean1, double conc1, double alpha1, double mean2,
+                             double conc2, double alpha2, std::vector<Point<int>>& data,
+                             int min_pop = 25) {
+    auto cdf_x = [=](int x) -> double { return zinb2_cdf_single(x, mean1, conc1, alpha1); };
+    auto cdf_y = [=](int y) -> double { return zinb2_cdf_single(y, mean2, conc2, alpha2); };
 
-    // A little inefficient, as we can cache these per feature separately
-    Bounds<int> bounds = get_bounds(point_samples);
+    MutualInformation<int> mi(data, min_pop, true);
+    mi.setCDF(cdf_x, cdf_y);
 
-    return mutual_information_nb(mean1, conc1, mean2, conc2, point_samples,
-                                 nPoints, bounds, min_pop);
+    return mi.mutual_information();
 }
 
-double mutual_information_zinb_quantised_rle(
-    double mean1, double conc1, double mean2, double conc2, double alpha1, double alpha2,
-    std::vector<std::pair<int, int>> rle1,
-    std::vector<std::pair<int, int>> rle2, int nPoints, int min_pop = 25) {
-    std::vector<std::pair<Point<int>, int>> point_samples =
-        runLengthDecoding(rle1, rle2);
+// 2
+double mutual_information_nb(double mean1, double conc1, double mean2,
+                             double conc2, Eigen::VectorXi& data1,
+                             Eigen::VectorXi data2, int min_pop = 25) {
 
-    // A little inefficient, as we can cache these per feature separately
-    Bounds<int> bounds = get_bounds(point_samples);
+    std::vector<Point<int>> point_samples =
+        convertSamplesToPoints(data1, data2);
 
-    return mutual_information_zinb(mean1, conc1, mean2, conc2, alpha1, alpha2, point_samples,
-                                 nPoints, bounds, min_pop);
+    return mutual_information_nb(mean1, conc1, mean2, conc2, point_samples,
+                                 min_pop);
+}
+
+double mutual_information_zinb(double mean1, double conc1, double alpha1, double mean2,
+                             double conc2, double alpha2, Eigen::VectorXi& data1,
+                             Eigen::VectorXi data2, int min_pop = 25) {
+
+    std::vector<Point<int>> point_samples =
+        convertSamplesToPoints(data1, data2);
+
+    return mutual_information_zinb(mean1, conc1, alpha1, mean2, conc2, alpha2, point_samples,
+                                 min_pop);
+}
+
+// Mutual information with NB distributed marginals, RLE
+double mutual_information_nb(double mean1, double conc1, double mean2,
+                             double conc2,
+                             std::vector<std::pair<Point<int>, int>>& data,
+                             int nPoints, Bounds<int> bounds,
+                             int min_pop = 10) {
+    auto cdf_x = [=](int x) -> double { return nb2_cdf_single(x, mean1, conc1); };
+    auto cdf_y = [=](int y) -> double { return nb2_cdf_single(y, mean2, conc2); };
+
+    MutualInformation<int> mi(data, nPoints, bounds, min_pop);
+    mi.setCDF(cdf_x, cdf_y);
+
+    return mi.mutual_information();
 }
 
 // Mutual information with NB distributed marginals
@@ -329,119 +404,18 @@ double mutual_information_nb(double mean1, double conc1, double mean2,
                                  min_pop);
 }
 
-// TODO: Pass a struct of params rather that something explicit to clean this up
-
-Eigen::MatrixXd mutual_information_rle(Eigen::MatrixXi& samples,
-                                       Eigen::VectorXd means,
-                                       Eigen::VectorXd std_devs,
-                                       int min_pop = 25) {
-    // Beware of types - integer matrix input
-
-    std::vector<std::vector<std::pair<int, int>>> rle(samples.cols());
-
-    Eigen::MatrixXd results(samples.cols(), samples.cols());
-
-#pragma omp parallel for
-    for (int i = 0; i < samples.cols(); i++) {
-        rle[i] = runLengthEncoding(samples.col(i));
-    }
-
-    // I don't *think* that the rle vectors are modified, but replace all of the
-    // downstream functions with const versions, to be sure
-
-#pragma omp parallel for
-    for (int i = 0; i < samples.cols(); i++) {
-        for (int j = i + 1; j < samples.cols(); j++) {
-            double mi = mutual_information_quantised_rle(
-                       means(i), std_devs(i), means(j), std_devs(j), rle[i],
-                       rle[j], samples.rows()),
-                   min_pop;
-
-            results(i, j) = mi;
-        }
-    }
-
-    return results;
-}
-
-Eigen::MatrixXd mutual_information_nb_rle(Eigen::MatrixXi& samples,
-                                          Eigen::VectorXd means,
-                                          Eigen::VectorXd concentrations,
-                                          int min_pop = 25) {
-    // Beware of types - integer matrix input
-
-    std::vector<std::vector<std::pair<int, int>>> rle(samples.cols());
-
-    Eigen::MatrixXd results(samples.cols(), samples.cols());
-
-#pragma omp parallel for
-    for (int i = 0; i < samples.cols(); i++) {
-        rle[i] = runLengthEncoding(samples.col(i));
-    }
-
-    // I don't *think* that the rle vectors are modified, but replace all of the
-    // downstream functions with const versions, to be sure
-
-#pragma omp parallel for
-    for (int i = 0; i < samples.cols(); i++) {
-        for (int j = i + 1; j < samples.cols(); j++) {
-            double mi = mutual_information_nb_quantised_rle(
-                means(i), concentrations(i), means(j), concentrations(j),
-                rle[i], rle[j], samples.rows(), min_pop);
-
-            results(i, j) = mi;
-        }
-    }
-
-    return results;
-}
-
-// Handle alpha as a parameter always?
-Eigen::MatrixXd mutual_information_zinb_rle(Eigen::MatrixXi& samples,
-                                          Eigen::VectorXd means,
-                                          Eigen::VectorXd concentrations,
-                                          Eigen::VectorXd alphas,
-                                          int min_pop = 25) {
-    // Beware of types - integer matrix input
-
-    std::vector<std::vector<std::pair<int, int>>> rle(samples.cols());
-
-    Eigen::MatrixXd results(samples.cols(), samples.cols());
-
-#pragma omp parallel for
-    for (int i = 0; i < samples.cols(); i++) {
-        rle[i] = runLengthEncoding(samples.col(i));
-    }
-
-    // I don't *think* that the rle vectors are modified, but replace all of the
-    // downstream functions with const versions, to be sure
-
-#pragma omp parallel for
-    for (int i = 0; i < samples.cols(); i++) {
-        for (int j = i + 1; j < samples.cols(); j++) {
-            double mi = mutual_information_zinb_quantised_rle(
-                means(i), concentrations(i), means(j), concentrations(j), alphas(i), alphas(j),
-                rle[i], rle[j], samples.rows(), min_pop);
-
-            results(i, j) = mi;
-        }
-    }
-
-    return results;
-}
-
-// I also want to take in an integer matrix - template it?
-Eigen::MatrixXd mutual_information_normal(Eigen::MatrixXd& samples,
-                                          Eigen::VectorXd means,
-                                          Eigen::VectorXd std_devs,
-                                          int min_pop = 25) {
+// mi_normal in python
+Eigen::MatrixXd mutual_information_normal(const Eigen::MatrixXd& samples,
+                                            const Eigen::VectorXd& means,
+                                            const Eigen::VectorXd& std_devs,
+                                            int min_pop = 25) {
     Eigen::MatrixXd results(samples.cols(), samples.cols());
 
 #pragma omp parallel for
     for (int i = 0; i < samples.cols(); i++) {
         for (int j = i + 1; j < samples.cols(); j++) {
-            Eigen::VectorXd f1 = samples.col(i);
-            Eigen::VectorXd f2 = samples.col(j);
+            auto f1 = samples.col(i);
+            auto f2 = samples.col(j);
 
             results(i, j) = mutual_information_normal(
                 means(i), std_devs(i), means(j), std_devs(j), f1, f2, min_pop);
@@ -451,10 +425,12 @@ Eigen::MatrixXd mutual_information_normal(Eigen::MatrixXd& samples,
     return results;
 }
 
+// mi_normal_q in python
 Eigen::MatrixXd mutual_information_normal(Eigen::MatrixXi& samples,
                                           Eigen::VectorXd means,
                                           Eigen::VectorXd std_devs,
                                           int min_pop = 25) {
+
     Eigen::MatrixXd results(samples.cols(), samples.cols());
 
 #pragma omp parallel for
@@ -467,6 +443,66 @@ Eigen::MatrixXd mutual_information_normal(Eigen::MatrixXi& samples,
 
             results(i, j) = mutual_information_quantised(
                 means(i), std_devs(i), means(j), std_devs(j), f1, f2, min_pop);
+        }
+    }
+
+    return results;
+}
+
+Eigen::MatrixXd mutual_information_nb(Eigen::MatrixXi& samples,
+                                                    Eigen::VectorXd means,
+                                                    Eigen::VectorXd concs,
+                                                    int min_pop = 25) {
+
+    Eigen::MatrixXd results(samples.cols(), samples.cols());
+
+#pragma omp parallel for
+    for (int i = 0; i < samples.cols(); i++) {
+        for (int j = i + 1; j < samples.cols(); j++) {
+
+            Eigen::VectorXi f1 = samples.col(i);
+            Eigen::VectorXi f2 = samples.col(j);
+
+            results(i, j) = mutual_information_nb(means(i), concs(i), means(j), concs(j), f1, f2, min_pop);
+
+        }
+    }
+
+    return results;
+}
+
+Eigen::MatrixXd mutual_information_zinb(Eigen::MatrixXi& samples,
+                                                    Eigen::VectorXd means,
+                                                    Eigen::VectorXd concs,
+                                                    Eigen::VectorXd alphas,
+                                                    int min_pop = 25) {
+
+    Eigen::MatrixXd results(samples.cols(), samples.cols());
+
+#pragma omp parallel for
+    for (int i = 0; i < samples.cols(); i++) {
+        for (int j = i + 1; j < samples.cols(); j++) {
+
+            Eigen::VectorXi f1 = samples.col(i);
+            Eigen::VectorXi f2 = samples.col(j);
+
+            results(i, j) = mutual_information_zinb(means(i), concs(i), alphas(i), means(j), concs(j), alphas(j), f1, f2, min_pop);
+
+        }
+    }
+
+    return results;
+}
+
+Eigen::MatrixXd mutual_information_ml(Eigen::MatrixXi& samples) {
+    int ncols = samples.cols();
+
+    Eigen::MatrixXd results = Eigen::MatrixXd::Zero(ncols, ncols);
+
+    #pragma omp parallel for
+    for (int i = 0; i < ncols; i++) {
+        for (int j = i + 1; j < ncols; j++) {
+            results(i, j) = mutual_information_ml(samples.col(i), samples.col(j));
         }
     }
 
@@ -492,7 +528,7 @@ double mutual_information_binarised(Eigen::VectorXi f1, Eigen::VectorXi f2) {
         f1_1 += (f1[i] == 1);
         f2_0 += (f2[i] == 0);
         f2_1 += (f2[i] == 1);
-        
+
         if (f1[i] == 0 && f2[i] == 0) p00++;
         if (f1[i] == 0 && f2[i] == 1) p01++;
         if (f1[i] == 1 && f2[i] == 0) p10++;

@@ -114,8 +114,11 @@ static void BM_RLE_MI(benchmark::State& state) {
     Eigen::MatrixXi samples =
         sampleIndependentNormals(mean, variance, num_samples).cast<int>();
 
+    samples = (samples.array() + std::abs(samples.minCoeff())).matrix();
+
     for (auto _ : state) {
-        Eigen::MatrixXd mi = mutual_information_rle(samples, mean, variance);
+        // Eigen::MatrixXd mi = mutual_information_normal(samples, mean, variance);
+        Eigen::MatrixXd mi = mutual_information_ml(samples);
 
         benchmark::DoNotOptimize(mi);
     }
@@ -123,7 +126,8 @@ static void BM_RLE_MI(benchmark::State& state) {
 }
 
 // BENCHMARK(BM_MI)->Range(16, 1 << 16)->Complexity();
-BENCHMARK(BM_RLE_MI)->Range(16, 1 << 14)->Complexity();
+// BENCHMARK(BM_RLE_MI)->RangeMultiplier(2)->Range(1024, 16384)->Complexity();
+BENCHMARK(BM_RLE_MI)->Range(16, 1 << 16)->Complexity();
 
 BENCHMARK_MAIN();
 
@@ -132,13 +136,13 @@ BENCHMARK_MAIN();
 int main() {
     // Here, N is both the number of dimensions and the number of correlated
     // normals.
-    const int N = 10;
+    const int N = 4000;
     const int num_samples =
         10000;  // number of samples drawn from the multivariate normal
 
     // Setup random generators.
     std::mt19937 rng(42);
-    std::uniform_real_distribution<double> mean_dist(49., 51.);
+    std::uniform_real_distribution<double> mean_dist(99., 101.);
     std::uniform_real_distribution<double> variance_dist(99., 100.0);
 
     // Generate a random mean vector (size N).
@@ -168,30 +172,58 @@ int main() {
 
     Eigen::VectorXd std_dev = variance.array().sqrt();
 
-    double mi_2d = mutual_information_normal(mean(0), std_dev(0), mean(1),
-                                             std_dev(1), f1, f2);
+    // double mi_2d = mutual_information_normal(mean(0), std_dev(0), mean(1),
+    //                                          std_dev(1), f1, f2, 25);
 
-    std::cout << "MI " << mi_2d << std::endl;
+    // std::cout << "MI " << mi_2d << std::endl;
 
     // double mi_2dq = mutual_information_quantised(mean(0), std_dev(0),
-    // mean(1), std_dev(1), f1, f2);
+    // mean(1), std_dev(1), f1, f2, 25);
 
     // std::cout << "MI Q " << mi_2dq << std::endl;
 
-    // Standard multi-dimensional
-    Eigen::MatrixXd mi_nd = mutual_information_normal(samples, mean, std_dev);
+    // std::cout << samples.rows() << " " << samples.cols() << std::endl;
 
-    std::cout << "MI ND" << mi_nd << std::endl;
+    // // Should be equivalent
+    // std::vector<Point<int>> point_samples = convertSamplesToPointsQuantised(samples);
+    // // std::vector<Point<int>> point_samples = convertSamplesToPointsQuantised(f1, f2);
 
+    // double mi_2dq_t = mutual_information_normal(mean(0), std_dev(0), mean(1),
+    //                                          std_dev(1), point_samples, 25);
+
+    // std::cout << "MI Q test " << mi_2dq_t << std::endl;
+
+    // // Standard multi-dimensional
+    // Eigen::MatrixXd mi_nd = mutual_information_normal(samples, mean, std_dev, 25);
+
+    // std::cout << "MI ND" << mi_nd << std::endl;
+
+    // The direct cast means that these probably aren't going to be the same
     Eigen::MatrixXi samples_int = samples.cast<int>();
 
-    // Quantised multi-dimensional
-    Eigen::MatrixXd mi_ndq =
-        mutual_information_normal(samples_int, mean, std_dev, 5);
+    // // Quantised multi-dimensional
+    // Eigen::MatrixXd mi_ndq =
+    //     mutual_information_normal(samples_int, mean, std_dev, 25);
 
-    std::cout << "MI ND Q" << mi_nd << std::endl;
+    // std::cout << "MI ND Q" << mi_ndq << std::endl;
 
     // RLE multi-dimensional
+
+    // NB test
+
+    std_dev *= 5.5;
+
+    // Eigen::VectorXd conc = (mean.eval().array() * mean.eval().array()) / ((std_dev.eval().array() * std_dev.eval().array()) - mean.eval().array());
+
+    // std::cout << conc << std::endl;
+
+    // Eigen::MatrixXd mi_nb =
+        // mutual_information_nb(samples_int, mean, conc, 5);
+
+    Eigen::MatrixXd mi = mutual_information_ml(samples_int);
+
+    // std::cout << "MI NB (ish)" << mi_nb << std::endl;
+
 }
 
 #endif

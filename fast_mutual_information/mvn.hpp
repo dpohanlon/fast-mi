@@ -69,7 +69,8 @@ double normal_pdf(double x, double mean, double stddev) {
 }
 
 // Cumulative Distribution Function (CDF) of the normal distribution
-double normal_cdf(double x, double mean, double stddev) {
+template <typename T>
+double normal_cdf(T x, double mean, double stddev) {
 
     if (stddev <= 0.0) {
         throw std::invalid_argument("Standard deviation must be positive.");

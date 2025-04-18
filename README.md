@@ -55,6 +55,13 @@ These are parallelised using OpenMP, so be sure to set `OMP_NUM_THREADS` to a re
 export OMP_NUM_THREADS=4
 ```
 
+Performance
+====
+
+![comparison](assets/comparison.png)
+
+Run time comparison on an M3 Pro, with `OMP_NUM_THREADS=8`.
+
 Installation
 =====
 

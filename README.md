@@ -4,7 +4,7 @@
       Fast pairwise mutual information for Python and C++
 </p>
 
-![Tests!](https://github.com/dpohanlon/fast_mi/actions/workflows/python-app.yml/badge.svg)
+![Tests!](https://github.com/dpohanlon/fast_mi_test/actions/workflows/build.yml/badge.svg)
 
 
 Intro

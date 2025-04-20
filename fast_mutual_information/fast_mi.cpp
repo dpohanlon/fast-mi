@@ -117,7 +117,7 @@ static void BM_RLE_MI(benchmark::State& state) {
     samples = (samples.array() + std::abs(samples.minCoeff())).matrix();
 
     for (auto _ : state) {
-        // Eigen::MatrixXd mi = mutual_information_normal(samples, mean, variance);
+        // auto [mi, chi2] = mutual_information_normal(samples, mean, variance);
         Eigen::MatrixXd mi = mutual_information_ml(samples);
 
         benchmark::DoNotOptimize(mi);

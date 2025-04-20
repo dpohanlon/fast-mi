@@ -111,14 +111,12 @@ class KDTree {
         return (bins_xy - 1) / (2. * total_count);
     }
 
-    // Function to compute mutual information
-    double compute_mutual_information() const {
-        double mi = 0.0;
-        double area = 0.0;
-
-        traverse_and_compute(root.get(), mi, area);
-
-        return mi;
+    std::pair<double, double> compute_mutual_information() const {
+        double mi    = 0.0;
+        double area  = 0.0;
+        double chi2  = 0.0;
+        traverse_and_compute(root.get(), mi, area, chi2);
+        return { mi, chi2 };
     }
 
     int calculate_depth(const KDNode<T>* node) const {
@@ -331,7 +329,7 @@ class KDTree {
     }
 
     void traverse_and_compute(const KDNode<T>* node, double& mi,
-                              double& area) const {
+                              double& area, double& chi2) const {
         if (!node) return;
 
         if (node->is_leaf) {
@@ -341,15 +339,6 @@ class KDTree {
             double bin_area = this->get_bin_area(*node);
 
             const double epsilon = 1e-12;
-            // if (bin_area < epsilon) {
-            //     bin_area = epsilon;
-            // }
-
-            // double p_xy = calculate_p_xy(bin_count, bin_area);
-
-            // if (p_xy > 0) {
-            //     mi += p_xy * std::log(p_xy) * bin_area;
-            // }
 
             // Compute log-density with a regularized bin area to avoid log(0)
             double log_p_xy = std::log(bin_count) - std::log(total_count) - std::log(bin_area + epsilon);
@@ -359,11 +348,17 @@ class KDTree {
 
             area += bin_area;
 
+            double expected_count = static_cast<double>(total_count) * bin_area;
+            if (expected_count > 0) {
+                double diff = static_cast<double>(bin_count) - expected_count;
+                chi2 += diff * diff / expected_count;
+            }
+
             return;
         }
 
-        traverse_and_compute(node->left.get(), mi, area);
-        traverse_and_compute(node->right.get(), mi, area);
+        traverse_and_compute(node->left.get(), mi, area, chi2);
+        traverse_and_compute(node->right.get(), mi, area, chi2);
     }
 };
 

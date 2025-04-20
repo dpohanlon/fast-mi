@@ -39,7 +39,7 @@ PYBIND11_MODULE(fast_mutual_information, m) {
     m.def(
         "mi_normal",
         [](double mean1, double std_dev1, double mean2, double std_dev2,
-           Eigen::MatrixXd& data, int min_pop) -> double {
+           Eigen::MatrixXd& data, int min_pop) -> std::pair<double, double> {
             return mutual_information_normal(mean1, std_dev1, mean2, std_dev2,
                                              data, min_pop);
         },
@@ -61,7 +61,7 @@ PYBIND11_MODULE(fast_mutual_information, m) {
 
     m.def("mi_normal",
           [](const Eigen::MatrixXd& data, const Eigen::VectorXd& means,
-             const Eigen::VectorXd& std_devs, int min_pop) -> Eigen::MatrixXd {
+             const Eigen::VectorXd& std_devs, int min_pop) -> std::pair<Eigen::MatrixXd, Eigen::MatrixXd> {
               return mutual_information_normal(data, means, std_devs, min_pop);
              },
             py::arg("data"), py::arg("means"), py::arg("std_devs"),
@@ -82,7 +82,7 @@ PYBIND11_MODULE(fast_mutual_information, m) {
     m.def(
         "mi_normal",
         [](Eigen::MatrixXi& data, Eigen::VectorXd& means,
-           Eigen::VectorXd& variances, int min_pop) -> Eigen::MatrixXd {
+           Eigen::VectorXd& variances, int min_pop) -> std::pair<Eigen::MatrixXd, Eigen::MatrixXd> {
             return mutual_information_normal(data, means, variances, min_pop);
         },
         py::arg("data"), py::arg("means"), py::arg("variances"),
@@ -103,7 +103,7 @@ PYBIND11_MODULE(fast_mutual_information, m) {
     m.def(
         "mi_normal",
         [](MatrixXl& data, Eigen::VectorXd& means,
-           Eigen::VectorXd& variances, int min_pop) -> Eigen::MatrixXd {
+           Eigen::VectorXd& variances, int min_pop) -> std::pair<Eigen::MatrixXd, Eigen::MatrixXd> {
             Eigen::MatrixXi data_i = data.cast<int>().eval();
             return mutual_information_normal(data_i, means, variances, min_pop);
         },
@@ -127,7 +127,7 @@ PYBIND11_MODULE(fast_mutual_information, m) {
     m.def(
         "mi_negative_binomial",
         [](Eigen::MatrixXi& data, Eigen::VectorXd& means,
-           Eigen::VectorXd& concentrations, int min_pop) -> Eigen::MatrixXd {
+           Eigen::VectorXd& concentrations, int min_pop) -> std::pair<Eigen::MatrixXd, Eigen::MatrixXd>{
             return mutual_information_nb(data, means, concentrations,
                                              min_pop);
         },
@@ -149,7 +149,7 @@ PYBIND11_MODULE(fast_mutual_information, m) {
     m.def(
         "mi_negative_binomial_zi",
         [](Eigen::MatrixXi& data, Eigen::VectorXd& means,
-           Eigen::VectorXd& concentrations, Eigen::VectorXd& alphas, int min_pop) -> Eigen::MatrixXd {
+           Eigen::VectorXd& concentrations, Eigen::VectorXd& alphas, int min_pop) -> std::pair<Eigen::MatrixXd, Eigen::MatrixXd> {
             return mutual_information_zinb(data, means, concentrations, alphas,
                                              min_pop);
         },

@@ -6,7 +6,6 @@
 
 ![Tests!](https://github.com/dpohanlon/fast_mi/actions/workflows/python-app.yml/badge.svg)
 
-------
 
 Intro
 =====

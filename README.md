@@ -1,6 +1,17 @@
-# Fast pairwise mutual information calculation
+<p align="center">
+  <img width="200" height="141" src="assets/mi_logo.png">
+  <br>
+      Fast pairwise mutual information for Python and C++
+</p>
 
-A fast pairwise mutual information calculation for Python and C++, optimised for small repeated integer counts such as those seen in single-cell RNA sequencing data. This used the copula method to combine normal or negative binomial marginal distributions and a kd-tree for density estimation.
+![Tests!](https://github.com/dpohanlon/fast_mi/actions/workflows/python-app.yml/badge.svg)
+
+------
+
+Intro
+=====
+
+A fast pairwise mutual information calculation for Python and C++, optimised for small repeated integer counts such as those seen in single-cell RNA sequencing data. This uses the copula method to combine normal or negative binomial marginal distributions and a kd-tree for density estimation.
 
 Usage
 =====

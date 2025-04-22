@@ -13,6 +13,8 @@
 #include <vector>
 #include <fstream>
 
+#include "flat_hash_map.hpp"
+
 #include "copula.hpp"
 #include "point.hpp"
 #include "utils.hpp"
@@ -101,6 +103,12 @@ class KDTree {
     KDTree(std::vector<std::pair<Point<int>, int>>& unique_points, int nPoints,
            Bounds<int> bounds, Copula<int>* copula, int min_points_per_leaf, bool zi = false);
 
+    template<class InputIt>
+    KDTree(InputIt first, InputIt last,
+           Copula<int>* copula,
+           int min_points_per_leaf = 10,
+           bool zi = false);
+
     double get_correction() const {
         int depth = get_tree_depth();
 
@@ -150,6 +158,7 @@ class KDTree {
     std::vector<std::pair<Point<int>, int>> count_duplicates_unordered(
         const std::vector<Point<int>>& points) {
         std::unordered_map<Point<int>, int> counts;
+        // ska::flat_hash_map<Point<int>, int> counts;
         for (const auto& pt : points) {
             ++counts[pt];
         }
@@ -190,6 +199,43 @@ class KDTree {
         result.emplace_back(current, count);
         return result;
     }
+
+    // Replace your count_duplicates_unordered with this:
+    std::vector<std::pair<Point<int>, int>> count_duplicates_hist(
+        const std::vector<Point<int>>& points,
+        int min_x, int max_x,
+        int min_y, int max_y)
+    {
+        const int nx = max_x - min_x + 1;
+        const int ny = max_y - min_y + 1;
+
+        // flat histogram + touched‐bins list
+        std::vector<int> hist(nx * ny, 0);
+        std::vector<int> touched;
+        touched.reserve(points.size());
+
+        // 1) fill, tracking which bins go from 0→1
+        for (const auto& pt : points) {
+            int ix  = pt.x - min_x;
+            int iy  = pt.y - min_y;
+            int idx = ix * ny + iy;
+            if (hist[idx]++ == 0) {
+                touched.push_back(idx);
+            }
+        }
+
+        // 2) collect non‑zero counts
+        std::vector<std::pair<Point<int>, int>> result;
+        result.reserve(touched.size());
+        for (int idx : touched) {
+            int ix = (idx / ny) + min_x;
+            int iy = (idx % ny) + min_y;
+            result.emplace_back(Point<int>{ix, iy}, hist[idx]);
+        }
+
+        return result;
+    }
+
 
     int aggregate_count(const std::vector<std::pair<Point<T>, int>>& pts) {
         int sum = 0;
@@ -368,10 +414,10 @@ KDTree<T>::KDTree(const std::vector<Point<T>>& points, Copula<T>* copula,
     : min_points(min_points_per_leaf), copula(copula), zi(zi) {
     total_count = points.size();
 
-    std::vector<std::pair<Point<T>, int>> unique_points;
+    std::vector<std::pair<Point<T>, int>> unique_points(points.size());
 
     for (int i = 0; i < points.size(); i++) {
-        unique_points.push_back(std::make_pair(points[i], 1));
+        unique_points[i] = std::make_pair(points[i], 1);
     }
 
     // These are the boundaries of the unit square for assumed U[0, 1] if passed
@@ -388,6 +434,23 @@ KDTree<T>::KDTree(const std::vector<Point<T>>& points, Copula<T>* copula,
     #endif
 }
 
+inline Bounds<int> get_bounds(const std::vector<Point<int>>& points) {
+    Bounds<int> b;
+    b.min_x = std::numeric_limits<int>::max();
+    b.max_x = std::numeric_limits<int>::min();
+    b.min_y = std::numeric_limits<int>::max();
+    b.max_y = std::numeric_limits<int>::min();
+
+    for (const auto& p : points) {
+        if (p.x < b.min_x) b.min_x = p.x;
+        if (p.x > b.max_x) b.max_x = p.x;
+        if (p.y < b.min_y) b.min_y = p.y;
+        if (p.y > b.max_y) b.max_y = p.y;
+    }
+
+    return b;
+}
+
 template <>
 KDTree<int>::KDTree(const std::vector<Point<int>>& points, Copula<int>* copula,
                     int min_points_per_leaf, bool zi)
@@ -397,10 +460,21 @@ KDTree<int>::KDTree(const std::vector<Point<int>>& points, Copula<int>* copula,
     std::vector<std::pair<Point<int>, int>> unique_points =
         count_duplicates_unordered(points);
 
+    // std::vector<std::pair<Point<int>, int>> unique_points(points.size());
+
+    // for (int i = 0; i < points.size(); i++) {
+    //     unique_points[i] = std::make_pair(points[i], 1);
+    // }
+
     // These are the boundaries of the input data that then get mapped to [0, 1,
     // 0, 1] when transformed via the CDF
 
     Bounds<int> bounds = get_bounds(points);
+
+    // Not worth it?
+    // auto unique_points = count_duplicates_hist(points,
+    //                                    bounds.min_x, bounds.max_x,
+    //                                    bounds.min_y, bounds.max_y);
 
     root = build(unique_points, 0, bounds, zi);
 
@@ -408,6 +482,63 @@ KDTree<int>::KDTree(const std::vector<Point<int>>& points, Copula<int>* copula,
     this->dumpSplittingValuesToCSV("debug_splits.csv");
     #endif
 }
+
+// In KDTree<T> (specialized for int):
+
+template <>
+template<class InputIt>
+KDTree<int>::KDTree(InputIt first, InputIt last,
+       Copula<int>* copula,
+       int min_points_per_leaf,
+       bool zi)
+    : min_points(min_points_per_leaf),
+      copula(copula),
+      zi(zi)
+{
+    total_count = std::distance(first, last);
+
+    // 1) compute integer bounds in one pass
+    // Do this externally once?
+    int min_x = std::numeric_limits<int>::max(), max_x = std::numeric_limits<int>::min();
+    int min_y = std::numeric_limits<int>::max(), max_y = std::numeric_limits<int>::min();
+    for (auto it = first; it != last; ++it) {
+        const auto& p = *it;
+        min_x = std::min(min_x, p.x);
+        max_x = std::max(max_x, p.x);
+        min_y = std::min(min_y, p.y);
+        max_y = std::max(max_y, p.y);
+    }
+    Bounds<int> bounds{min_x, max_x, min_y, max_y};
+
+    // 2) dense 2D histogram duplicate‑count
+    int nx = max_x - min_x + 1, ny = max_y - min_y + 1;
+    std::vector<int> hist(nx * ny, 0), touched;
+    touched.reserve(total_count);
+
+    for (auto it = first; it != last; ++it) {
+        const auto& p = *it;
+        int ix = p.x - min_x, iy = p.y - min_y;
+        int idx = ix * ny + iy;
+        if (hist[idx]++ == 0) touched.push_back(idx);
+    }
+
+    // 3) collect unique (x,y,count)
+    std::vector<std::pair<Point<int>,int>> unique_points;
+    unique_points.reserve(touched.size());
+    for (int idx : touched) {
+        int ix = (idx / ny) + min_x;
+        int iy = (idx % ny) + min_y;
+        unique_points.emplace_back(Point<int>{ix, iy}, hist[idx]);
+    }
+
+    // 4) build tree
+    root = build(unique_points, 0, bounds, zi);
+
+  #ifdef DEBUG
+    dumpSplittingValuesToCSV("debug_splits.csv");
+  #endif
+}
+
 
 // For pre-calculated duplicates on RLE vectors - would be nice to make this
 // const, but then it has to be sorted

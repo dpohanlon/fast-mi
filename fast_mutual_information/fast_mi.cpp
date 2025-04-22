@@ -47,36 +47,36 @@ Eigen::MatrixXd sampleIndependentNormals(const Eigen::VectorXd& mean,
 
 #ifdef ENABLE_BENCHMARK
 
-static void BM_MI(benchmark::State& state) {
-    Eigen::VectorXd mean(2);
-    mean << 40.0, 150.0;
+// static void BM_MI(benchmark::State& state) {
+//     Eigen::VectorXd mean(2);
+//     mean << 40.0, 150.0;
 
-    Eigen::VectorXd variance(2);
-    variance << 30.0, 50.0;
+//     Eigen::VectorXd variance(2);
+//     variance << 30.0, 50.0;
 
-    Eigen::MatrixXd corr(2, 2);
-    corr << 1.0, -0.7, -0.7, 1.0;
+//     Eigen::MatrixXd corr(2, 2);
+//     corr << 1.0, -0.7, -0.7, 1.0;
 
-    Eigen::MatrixXd cov = correlationToCovariance(corr, variance);
+//     Eigen::MatrixXd cov = correlationToCovariance(corr, variance);
 
-    int num_samples = 10000;
+//     int num_samples = 10000;
 
-    Eigen::MatrixXd samples = sampleMultivariateNormal(mean, cov, num_samples);
+//     Eigen::MatrixXd samples = sampleMultivariateNormal(mean, cov, num_samples);
 
-    Eigen::VectorXd std_dev = variance.array().sqrt();
+//     Eigen::VectorXd std_dev = variance.array().sqrt();
 
-    for (auto _ : state) {
-        std::vector<float> results(state.range(0));
-        for (size_t i = 0; i < results.size(); ++i) {
-            double mi = mutual_information_quantised(
-                mean(0), std_dev(0), mean(1), std_dev(1), samples, 10);
+//     for (auto _ : state) {
+//         std::vector<float> results(state.range(0));
+//         for (size_t i = 0; i < results.size(); ++i) {
+//             double mi = mutual_information_quantised(
+//                 mean(0), std_dev(0), mean(1), std_dev(1), samples, 10);
 
-            results[i] = mi;
-        }
-        benchmark::DoNotOptimize(results);
-    }
-    state.SetComplexityN(state.range(0));
-}
+//             results[i] = mi;
+//         }
+//         benchmark::DoNotOptimize(results);
+//     }
+//     state.SetComplexityN(state.range(0));
+// }
 
 static void BM_RLE_MI(benchmark::State& state) {
     if (std::getenv("OMP_NUM_THREADS") == nullptr) {
@@ -92,7 +92,7 @@ static void BM_RLE_MI(benchmark::State& state) {
     // normals.
     const int N = state.range(0);
     const int num_samples =
-        10000;  // number of samples drawn from the multivariate normal
+        100000;  // number of samples drawn from the multivariate normal
 
     // Setup random generators.
     std::mt19937 rng(42);
@@ -117,8 +117,8 @@ static void BM_RLE_MI(benchmark::State& state) {
     samples = (samples.array() + std::abs(samples.minCoeff())).matrix();
 
     for (auto _ : state) {
-        // auto [mi, chi2] = mutual_information_normal(samples, mean, variance);
-        Eigen::MatrixXd mi = mutual_information_ml(samples);
+        auto [mi, chi2] = mutual_information_normal(samples, mean, variance);
+        // Eigen::MatrixXd mi = mutual_information_ml(samples);
 
         benchmark::DoNotOptimize(mi);
     }

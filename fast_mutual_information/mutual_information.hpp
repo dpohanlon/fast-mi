@@ -12,6 +12,7 @@
 #include "fast_negative_binomial/fast_nb.hpp"
 #include "kdtree.hpp"
 #include "mvn.hpp"
+#include "point.hpp"
 #include "utils.hpp"
 
 // Set up with a class, configure, then run MI calculation
@@ -34,6 +35,14 @@ class MutualInformation {
     MutualInformation(std::vector<std::pair<Point<int>, int>>& data,
                       int nPoints, Bounds<int> bounds, int max_points_per_leaf, bool zi = false);
 
+    template<typename ColVec>
+    MutualInformation(const PointView<ColVec>& data, int min_pop = 10)
+      : zi(false)
+    {
+        this->copula = new Copula<T>();
+        setData(data, min_pop);
+    }
+
     void setNormalCopula(double mean1, double std_dev1, double mean2,
                          double std_dev2) {
         this->copula->name = "NORMAL";
@@ -54,6 +63,18 @@ class MutualInformation {
 
     void setData(const std::vector<Point<T>>& data, int min_pop = 10) {
         this->tree = KDTree<T>(data, this->copula, min_pop, this->zi);
+    }
+
+    // void setData(PointView data, int min_pop = 10) {
+    //     this->tree = KDTree<T>(data.begin(), data.end(), this->copula, min_pop, this->zi);
+    // }
+
+    template<typename ColVec>
+    void setData(const PointView<ColVec>& data, int min_pop = 10) {
+        static_assert(std::is_same_v<typename ColVec::Scalar, T>,
+                      "PointView's Scalar must match MutualInformation<T>::T");
+        this->tree = KDTree<T>(data.begin(), data.end(),
+                               this->copula, min_pop, this->zi);
     }
 
     void setData(std::vector<std::pair<Point<int>, int>>& data, int nPoints,
@@ -429,6 +450,33 @@ std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_normal(const Eige
 }
 
 // mi_normal_q in python
+// std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_normal(Eigen::MatrixXi& samples,
+//                                           Eigen::VectorXd means,
+//                                           Eigen::VectorXd std_devs,
+//                                           int min_pop = 25) {
+
+//     Eigen::MatrixXd mi(samples.cols(), samples.cols());
+//     Eigen::MatrixXd chi2(samples.cols(), samples.cols());
+
+// #pragma omp parallel for
+//     for (int i = 0; i < samples.cols(); i++) {
+//         for (int j = i + 1; j < samples.cols(); j++) {
+//             // Cast to double so we can use the same point quantisation class,
+//             // even though these should be ints already
+//             Eigen::VectorXd f1 = samples.col(i).cast<double>();
+//             Eigen::VectorXd f2 = samples.col(j).cast<double>();
+
+//             auto [mi_ij, chi2_ij] = mutual_information_quantised(
+//                 means(i), std_devs(i), means(j), std_devs(j), f1, f2, min_pop);
+
+//             mi(i, j) = mi_ij;
+//             chi2(i, j) = chi2_ij;
+//         }
+//     }
+
+//     return {mi, chi2};
+// }
+
 std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_normal(Eigen::MatrixXi& samples,
                                           Eigen::VectorXd means,
                                           Eigen::VectorXd std_devs,
@@ -440,13 +488,13 @@ std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_normal(Eigen::Mat
 #pragma omp parallel for
     for (int i = 0; i < samples.cols(); i++) {
         for (int j = i + 1; j < samples.cols(); j++) {
-            // Cast to double so we can use the same point quantisation class,
-            // even though these should be ints already
-            Eigen::VectorXd f1 = samples.col(i).cast<double>();
-            Eigen::VectorXd f2 = samples.col(j).cast<double>();
 
-            auto [mi_ij, chi2_ij] = mutual_information_quantised(
-                means(i), std_devs(i), means(j), std_devs(j), f1, f2, min_pop);
+            PointView pv(samples.col(i), samples.col(j));
+
+            MutualInformation<int> mutual_information(pv, min_pop);
+            mutual_information.setNormalCopula(means(i), std_devs(i), means(j), std_devs(j));
+
+            auto [mi_ij, chi2_ij] = mutual_information.mutual_information();
 
             mi(i, j) = mi_ij;
             chi2(i, j) = chi2_ij;

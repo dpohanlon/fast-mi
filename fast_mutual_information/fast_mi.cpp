@@ -45,7 +45,7 @@ Eigen::MatrixXd sampleIndependentNormals(const Eigen::VectorXd& mean,
     return samples;
 }
 
-#ifdef ENABLE_BENCHMARK
+    #ifdef ENABLE_BENCHMARK
 
 // static void BM_MI(benchmark::State& state) {
 //     Eigen::VectorXd mean(2);

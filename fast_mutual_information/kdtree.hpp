@@ -13,8 +13,6 @@
 #include <vector>
 #include <fstream>
 
-#include "flat_hash_map.hpp"
-
 #include "copula.hpp"
 #include "point.hpp"
 #include "utils.hpp"

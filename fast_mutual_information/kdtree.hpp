@@ -369,36 +369,49 @@ class KDTree {
 
     std::unique_ptr<KDNode<T>> buildIterative(Bounds<T> root_bounds) {
         // all points are already in points_storage
+        //
         struct Task { KDNode<T>* node; int depth; Bounds<T> bounds; size_t b, e; };
         std::vector<Task> stack;
+
         auto root = std::make_unique<KDNode<T>>();
         root->bounds   = root_bounds;
         root->begin_idx = 0;
         root->end_idx   = points_storage.size();
         root->is_leaf = false;
-        stack.reserve(64);
+
+        stack.reserve(256);
+
         stack.push_back({root.get(), 0, root_bounds, 0, points_storage.size()});
 
         while (!stack.empty()) {
             auto [node, depth, bounds, b, e] = stack.back();
             stack.pop_back();
+
             size_t cnt = e - b;
+
             bool degenerate = (bounds.max_x - bounds.min_x < 1e-8)
                            || (bounds.max_y - bounds.min_y < 1e-8);
+
             if (cnt <= size_t(min_points) || degenerate) {
                 node->is_leaf = true;
+                // copy exactly this node’s range into the leaf’s points vector:
+                node->points.assign(
+                    points_storage.begin() + b,
+                    points_storage.begin() + e
+                );
                 continue;
             }
+
             int axis = depth % 2;
 
-            // Nth element
-            //
+
             size_t mid = b + cnt/2;
-            // in-place partition
+
             auto comp = [axis](auto &A, auto &B){
                 return (axis==0 ? A.first.x < B.first.x
                                 : A.first.y < B.first.y);
             };
+
             std::nth_element(points_storage.begin()+b,
                              points_storage.begin()+mid,
                              points_storage.begin()+e,
@@ -408,45 +421,10 @@ class KDTree {
                                ? points_storage[mid].first.x
                                : points_storage[mid].first.y);
 
-            // --- histogram-median selection start ---
-            // int min_coord = (axis==0 ? bounds.min_x : bounds.min_y);
-            // int max_coord = (axis==0 ? bounds.max_x : bounds.max_y);
-            // int r = max_coord - min_coord + 1;
-
-            // // 1) build the histogram
-            // std::vector<int> hist(r, 0);
-            // for (size_t i = b; i < e; ++i) {
-            //     const auto& pt = points_storage[i].first;
-            //     int c = (axis==0 ? pt.x : pt.y) - min_coord;
-            //     hist[c]++;
-            // }
-
-            // // 2) scan to find the “half-count” bin
-            // int half = static_cast<int>(e - b + 1) / 2;
-            // int cum = 0;
-            // T median_val = static_cast<T>(min_coord);
-            // for (int i = 0; i < r; ++i) {
-            //     cum += hist[i];
-            //     if (cum >= half) {
-            //         median_val = static_cast<T>(min_coord + i);
-            //         break;
-            //     }
-            // }
-            // node->split_dim = axis;
-            // node->split_val = median_val;
-
-            // // 3) partition in-place around median_val
-            // auto mid_it = std::partition(
-            //     points_storage.begin() + b,
-            //     points_storage.begin() + e,
-            //     [&](auto const& pr) {
-            //         const auto& p = pr.first;
-            //         return (axis==0 ? p.x : p.y) < median_val;
-            //     }
-            // );
-            // size_t mid = mid_it - points_storage.begin();
-            // carve children at [b,mid) and [mid,e)
-            // --- histogram-median selection end ---
+            if (mid == b || mid == e) {
+                node->is_leaf = true;
+                continue;
+            }
 
             // carve child bounds
             Bounds<T> L = bounds, R = bounds;

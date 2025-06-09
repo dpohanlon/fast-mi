@@ -2,9 +2,6 @@
 	path = extern/pybind11
 	url = ../../pybind/pybind11
 	branch = stable
-[submodule "extern/fast_nb_test"]
-	path = extern/fast_nb_test
-	url = git@github.com:dpohanlon/fast_nb_test.git
 [submodule "extern/FastNB"]
 	path = extern/FastNB
-	url = git@github.com:dpohanlon/fast_nb_test.git
+	url = git@github.com:dpohanlon/fast-nb.git

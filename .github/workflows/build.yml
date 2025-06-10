@@ -82,9 +82,6 @@ jobs:
                       mkdir build && cd build
                       cmake .. -DCMAKE_INSTALL_PREFIX=/usr/local
                       make install
-                      # Add deploy key to get NB repo
-                      eval `ssh-agent -s`
-                      ssh-add - <<< '${{ secrets.PRIVATE_SSH_KEY }}'
 
             - name: Run Tests
               if: runner.os == 'Linux'

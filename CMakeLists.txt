@@ -55,7 +55,7 @@ if(ENABLE_BOOST)
     # set(BOOST_ROOT "/path/to/boost")
     # set(BOOST_INCLUDEDIR "/path/to/boost/include")
     # set(BOOST_LIBRARYDIR "/path/to/boost/lib")
-    #
+
     set(Boost_USE_STATIC_LIBS ON)
     find_package(Boost 1.70.0 REQUIRED system)
 

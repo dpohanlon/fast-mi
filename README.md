@@ -10,12 +10,12 @@
 Intro
 =====
 
-A fast pairwise mutual information calculation for Python and C++, optimised for small repeated integer counts such as those seen in single-cell RNA sequencing data. This uses the copula method to combine normal or negative binomial marginal distributions and a kd-tree for density estimation.
+A fast pairwise mutual information calculation for Python and C++, optimised for small repeated integer counts such as those seen in single-cell RNA sequencing data. This uses the copula method to combine normal or negative binomial marginal distributions and a kd-tree for joint density estimation. In this way, sparse zero-inflated data are naturally incorporated, and as an added benefit, the $\chi^2$ test statistic versus zero mutual information is also calculated on the fly.
 
 Usage
 =====
 
-In Python, pairwise mutual information calculations are provided for both normal (`mi_normal`) and negative binomial (`mi_nb`) marginal distributions. These functions are overloaded to accept either scalar or vector (e.g., `np.array`) of floating point or integer valued observations. Several optimisations are provided for integer valued data, and these can be called using the quantised `*_q` versions of the functions.
+In Python, pairwise mutual information calculations are provided for both normal (`mi_normal`) and negative binomial (`mi_negative_binomial`) marginal distributions. These functions are overloaded to accept either scalar or vector (e.g., `np.array`) of floating point or integer valued observations. Several optimisations are provided for integer valued data.
 
 These functions have to be passed the parameters of the corresponding marginal distributions. For example, for the normal distribution:
 
@@ -27,7 +27,7 @@ mean1, std_dev1 = 0.0, 1.0
 mean2, std_dev2 = 0.0, 1.0
 
 # data: an (Nsamples, 2) array
-mi = mi_normal(mean1, std_dev1, mean2, std_dev2, data)
+mi, chi2 = mi_normal(mean1, std_dev1, mean2, std_dev2, data)
 ```
 
 and for the negative binomial distribution (in the `nb2` parameterisation):
@@ -40,26 +40,16 @@ from fast_mutual_information import mi_negative_binomial
 mean1, conc1 = 10, 10
 mean2, conc2 = 10, 10
 
+data = np.random.normal(0, 1, (1000, 2)).astype(np.int32)
+
 # data: an integer data array of shape (Nsamples, Nfeatures)
-mi_matrix = mi_negative_binomial(data, means, concentrations)
+mi_matrix, chi2_matrix = mi_negative_binomial(data, means, concentrations)
 
 ```
 
 The vector functions take an `(N_samples, N_features)` array of data, and return an `(N_features, N_features)` matrix of mutual information values, of which only the upper triangular part is filled.
 
-```python
-from fast_mutual_information import mi_normal_q
-
-data = np.random.normal(0, 1, (1000, 2)).astype(np.int32)
-
-means = np.mean(data, axis=0)
-std_devs = np.std(data, axis=0)
-
-# data: an (Nsamples, 2) array (use the quantised version)
-mi = mi_normal_q(data, means, std_devs)
-```
-
-These are parallelised using OpenMP, so be sure to set `OMP_NUM_THREADS` to a reasonable value.
+These are parallelised using OpenMP, so be sure to set `OMP_NUM_THREADS` to a reasonable value:
 
 ```bash
 export OMP_NUM_THREADS=4
@@ -125,7 +115,7 @@ To checkout the repository, as well as the PyBind11 and FastNB submodule:
 
 ``` bash
 
-git clone --recurse-submodules git@github.com:dpohanlon/fast_mi.git
+git clone --recurse-submodules git@github.com:dpohanlon/fast-mi.git
 cd fast_mi
 ```
 

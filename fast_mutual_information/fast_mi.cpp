@@ -1,5 +1,3 @@
-#include <sys/qos.h>
-
 #include <cmath>
 #include <numeric>
 #include <vector>

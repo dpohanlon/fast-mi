@@ -49,14 +49,15 @@ endif()
 
 if(ENABLE_BOOST)
     # Specify the Boost components you need
-    set(BOOST_COMPONENTS filesystem system math)  # Added 'math'
+    set(BOOST_COMPONENTS filesystem system)
 
     # Optionally specify the Boost root if it's in a non-standard location
     # set(BOOST_ROOT "/path/to/boost")
     # set(BOOST_INCLUDEDIR "/path/to/boost/include")
     # set(BOOST_LIBRARYDIR "/path/to/boost/lib")
-
-    find_package(Boost 1.70.0 REQUIRED system math)
+    #
+    set(Boost_USE_STATIC_LIBS ON)
+    find_package(Boost 1.70.0 REQUIRED system)
 
     if(Boost_FOUND)
         message(STATUS "Boost version: ${Boost_VERSION}")

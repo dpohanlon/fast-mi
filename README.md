@@ -68,7 +68,7 @@ export OMP_NUM_THREADS=4
 Performance
 ====
 
-![comparison](assets/comparison.png)
+![comparison](assets/timing.png)
 
 Run time comparison on an M3 Pro, with `OMP_NUM_THREADS=8`.
 

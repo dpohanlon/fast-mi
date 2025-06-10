@@ -13,9 +13,9 @@ Intro
 A fast pairwise mutual information calculation for Python and C++, optimised for small repeated integer counts such as those seen in single-cell RNA sequencing data. This uses the copula method to combine normal or negative binomial marginal distributions and a kd-tree for joint density estimation. In this way, sparse zero-inflated data are naturally incorporated, and as an added benefit, the $\chi^2$ test statistic versus zero mutual information is also calculated on the fly.
 
 The mutual information between two discrete variables $X$ and $Y$ is
-$$
+```math
 I(X, Y) = \Sum_x\Sum_y p_{XY}(x, y) \log \left( \frac{p_{XY}(x, y)}{p_X(x)p_Y(y)} \right).
-$$
+```
 With the assumption that we know the marginal distributions of $X$ and $Y$, (normal, negative binomial, etc) we transform them using the CDF such that they are uniform. Therefore, $p_X(x)$ and $p_Y(y)$ are constant, and we describe $p_{XY}(x, y)$ using a kd-tree. As a bonus, this means that the 'no mutual information' null hypothesis for the $\chi^2$ test is now just a uniform distribution in $p_{XY}(x, y)$, in the same kd-tree leaves. Along with a few more optimisations due to the small integer counts, this approach results in a fast and robust estimate of the pairwise mutual information that comes with a signififance measure for free.
 
 Usage

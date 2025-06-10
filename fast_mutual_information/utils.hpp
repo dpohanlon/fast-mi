@@ -195,8 +195,7 @@ std::vector<Point<int>> convertSamplesToPointsQuantised(
     }
 
     int num_samples = static_cast<int>(adjusted_samples.cols());
-    std::vector<Point<int>> points;
-    points.reserve(num_samples);
+    std::vector<Point<int>> points(num_samples);
 
     for (int i = 0; i < num_samples; ++i) {
         double x_double = adjusted_samples(0, i);
@@ -220,7 +219,7 @@ std::vector<Point<int>> convertSamplesToPointsQuantised(
                 "Invalid rounding_mode. Choose from 'round', 'floor', 'ceil', or 'truncate'.");
         }
 
-        points.emplace_back(Point<int>{x_int, y_int});
+        points[i] = Point<int>{x_int, y_int};
     }
 
     return points;
@@ -237,8 +236,7 @@ std::vector<Point<int>> convertSamplesToPointsQuantised(
     }
 
     int num_samples = static_cast<int>(samples1.size());
-    std::vector<Point<int>> points;
-    points.reserve(num_samples);
+    std::vector<Point<int>> points(num_samples);
 
     for (int i = 0; i < num_samples; ++i) {
         double x_double = samples1(i);
@@ -264,7 +262,7 @@ std::vector<Point<int>> convertSamplesToPointsQuantised(
                 "or 'truncate'.");
         }
 
-        points.emplace_back(Point<int>{x_int, y_int});
+        points[i] = Point<int>{x_int, y_int};
     }
 
     return points;

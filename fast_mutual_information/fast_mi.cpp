@@ -27,6 +27,133 @@
 #include "tests.hpp"
 #include "utils.hpp"
 
+// Helper function to calculate the percentile using Eigen (no std::vector)
+// Runs in average O(n) time thanks to Quick-Select
+double percentile(const Eigen::VectorXi& vec, double p) {
+    int n = vec.size();
+    if (n == 0) return 0.0;
+
+    // Compute fractional index into the sorted data
+    double index   = (p / 100.0) * (n - 1);
+    int    k       = static_cast<int>(index);
+    double fraction = index - k;
+
+    // Copy data (we'll reorder in-place)
+    Eigen::VectorXi sorted_vec = vec;
+
+    // Quick-select the k-th element into position
+    std::nth_element(
+        sorted_vec.data(),
+        sorted_vec.data() + k,
+        sorted_vec.data() + n
+    );
+
+    if (fraction == 0.0) {
+        // Exact match, no interpolation needed
+        return sorted_vec[k];
+    } else {
+        // Ensure the next element is in place for interpolation
+        std::nth_element(
+            sorted_vec.data(),
+            sorted_vec.data() + (k + 1),
+            sorted_vec.data() + n
+        );
+        // Linear interpolation between k and k+1
+        return sorted_vec[k]
+             + fraction * (sorted_vec[k + 1] - sorted_vec[k]);
+    }
+}
+
+
+// Binarise a feature vector based on a given percentile, with 0.95 cutoff handling
+Eigen::VectorXi binarise_feature(const Eigen::VectorXi& feature, bool dummy = true, double cutoff_percentile = 25.0) {
+
+    if (dummy) {
+        Eigen::VectorXi binarised_feature(feature.size());
+        for (int i = 0; i < feature.size(); ++i) {
+            binarised_feature[i] = (feature[i] > 0) ? 1 : 0;
+        }
+        return binarised_feature;
+    } else {
+        Eigen::VectorXi binarised_feature(feature.size());
+
+        // Calculate the cutoff percentile value
+        double cutoff = percentile(feature, cutoff_percentile);
+        double max_value = feature.maxCoeff() * 0.95;  // 95% of the maximum value
+        // If the cutoff is >= 0.95, binarise differently: all non-zero values become 1
+        if (cutoff >= max_value) {
+            // If cutoff is >= max_value, only set non-zero values to 1, keep zero values as 0
+            for (int i = 0; i < feature.size(); ++i) {
+                binarised_feature[i] = (feature[i] > 0) ? 1 : 0;  // Set non-zero values to 1
+            }
+        } else {
+            // Otherwise, binarise based on the cutoff
+            for (int i = 0; i < feature.size(); ++i) {
+                binarised_feature[i] = (feature[i] >= cutoff) ? 1 : 0;
+            }
+        }
+
+        return binarised_feature;
+    }
+}
+
+// Calculate mutual information between two binarized feature vectors
+double mutual_information_binarised_m(Eigen::VectorXi rawf1, Eigen::VectorXi rawf2, bool dummy = true, double cutoff_percentile = 25.0) {
+    double mi = 0.0;
+
+    // Binarise vectors
+    Eigen::VectorXi f1 = binarise_feature(rawf1, dummy, cutoff_percentile);
+    Eigen::VectorXi f2 = binarise_feature(rawf2, dummy, cutoff_percentile);
+
+    // std::cout << "f1: " << f1.transpose() << std::endl;
+    // std::cout << "f2: " << f2.transpose() << std::endl;
+
+    // Ensure the input features are binary and the same size
+    if (f1.size() != f2.size()) {
+        throw std::invalid_argument("Input features f1 and f2 are not the same size.");
+    }
+
+    // Check if all values in either vector are 0 or 1
+    if ((f1.minCoeff() == 0 && f1.maxCoeff() == 0) || (f1.minCoeff() == 1 && f1.maxCoeff() == 1) ||
+        (f2.minCoeff() == 0 && f2.maxCoeff() == 0) || (f2.minCoeff() == 1 && f2.maxCoeff() == 1)) {
+        return 0.0; // Mutual information is zero, at least one has no information
+    }
+
+    int n = f1.size(); // Length of the vectors
+
+    // Calculate marginal probabilities for f1 and f2, based on co-occurrences
+    double f1_0 = 0, f1_1 = 0, f2_0 = 0, f2_1 = 0, p11 = 0, p00 = 0, p10 = 0, p01 = 0;
+
+    for (int i = 0; i < n; i++) {
+        f1_0 += (f1[i] == 0);
+        f1_1 += (f1[i] == 1);
+        f2_0 += (f2[i] == 0);
+        f2_1 += (f2[i] == 1);
+
+        if (f1[i] == 0 && f2[i] == 0) p00++;
+        if (f1[i] == 0 && f2[i] == 1) p01++;
+        if (f1[i] == 1 && f2[i] == 0) p10++;
+        if (f1[i] == 1 && f2[i] == 1) p11++;
+    }
+
+    f1_0 /= n;
+    f1_1 /= n;
+    f2_0 /= n;
+    f2_1 /= n;
+    p00 /= n;
+    p01 /= n;
+    p10 /= n;
+    p11 /= n;
+
+    // Sum over each co-occurrence making sure only valid terms are calculated
+    if (p00 > 0 && f1_0 > 0 && f2_0 > 0) mi += p00 * log(p00 / (f1_0 * f2_0));
+    if (p01 > 0 && f1_0 > 0 && f2_1 > 0) mi += p01 * log(p01 / (f1_0 * f2_1));
+    if (p10 > 0 && f1_1 > 0 && f2_0 > 0) mi += p10 * log(p10 / (f1_1 * f2_0));
+    if (p11 > 0 && f1_1 > 0 && f2_1 > 0) mi += p11 * log(p11 / (f1_1 * f2_1));
+
+    return mi;
+}
+
 Eigen::MatrixXd sampleIndependentNormals(const Eigen::VectorXd& mean,
                                          const Eigen::VectorXd& variance,
                                          int num_samples) {
@@ -47,36 +174,36 @@ Eigen::MatrixXd sampleIndependentNormals(const Eigen::VectorXd& mean,
 
 #ifdef ENABLE_BENCHMARK
 
-static void BM_MI(benchmark::State& state) {
-    Eigen::VectorXd mean(2);
-    mean << 40.0, 150.0;
+// static void BM_MI(benchmark::State& state) {
+//     Eigen::VectorXd mean(2);
+//     mean << 40.0, 150.0;
 
-    Eigen::VectorXd variance(2);
-    variance << 30.0, 50.0;
+//     Eigen::VectorXd variance(2);
+//     variance << 30.0, 50.0;
 
-    Eigen::MatrixXd corr(2, 2);
-    corr << 1.0, -0.7, -0.7, 1.0;
+//     Eigen::MatrixXd corr(2, 2);
+//     corr << 1.0, -0.7, -0.7, 1.0;
 
-    Eigen::MatrixXd cov = correlationToCovariance(corr, variance);
+//     Eigen::MatrixXd cov = correlationToCovariance(corr, variance);
 
-    int num_samples = 10000;
+//     int num_samples = 10000;
 
-    Eigen::MatrixXd samples = sampleMultivariateNormal(mean, cov, num_samples);
+//     Eigen::MatrixXd samples = sampleMultivariateNormal(mean, cov, num_samples);
 
-    Eigen::VectorXd std_dev = variance.array().sqrt();
+//     Eigen::VectorXd std_dev = variance.array().sqrt();
 
-    for (auto _ : state) {
-        std::vector<float> results(state.range(0));
-        for (size_t i = 0; i < results.size(); ++i) {
-            double mi = mutual_information_quantised(
-                mean(0), std_dev(0), mean(1), std_dev(1), samples, 10);
+//     for (auto _ : state) {
+//         std::vector<float> results(state.range(0));
+//         for (size_t i = 0; i < results.size(); ++i) {
+//             double mi = mutual_information_quantised(
+//                 mean(0), std_dev(0), mean(1), std_dev(1), samples, 10);
 
-            results[i] = mi;
-        }
-        benchmark::DoNotOptimize(results);
-    }
-    state.SetComplexityN(state.range(0));
-}
+//             results[i] = mi;
+//         }
+//         benchmark::DoNotOptimize(results);
+//     }
+//     state.SetComplexityN(state.range(0));
+// }
 
 static void BM_RLE_MI(benchmark::State& state) {
     if (std::getenv("OMP_NUM_THREADS") == nullptr) {
@@ -92,7 +219,7 @@ static void BM_RLE_MI(benchmark::State& state) {
     // normals.
     const int N = state.range(0);
     const int num_samples =
-        10000;  // number of samples drawn from the multivariate normal
+        100000;  // number of samples drawn from the multivariate normal
 
     // Setup random generators.
     std::mt19937 rng(42);
@@ -116,9 +243,20 @@ static void BM_RLE_MI(benchmark::State& state) {
 
     samples = (samples.array() + std::abs(samples.minCoeff())).matrix();
 
+    Eigen::MatrixXd mi(samples.cols(), samples.cols());
+
     for (auto _ : state) {
         // auto [mi, chi2] = mutual_information_normal(samples, mean, variance);
-        Eigen::MatrixXd mi = mutual_information_ml(samples);
+        // Eigen::MatrixXd mi = mutual_information_ml(samples);
+
+        #pragma omp parallel for
+        for (int i = 0; i < samples.cols(); i++) {
+            for (int j = i + 1; j < samples.cols(); j++) {
+                auto f1 = samples.col(i);
+                auto f2 = samples.col(j);
+                mi(i, j) = mutual_information_binarised_m(f1, f2);
+            }
+        }
 
         benchmark::DoNotOptimize(mi);
     }

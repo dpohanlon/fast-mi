@@ -1,6 +1,8 @@
 #include <pybind11/eigen.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <pybind11/operators.h>
+#include <Eigen/Sparse>
 
 #include "mutual_information.hpp"
 
@@ -167,6 +169,139 @@ PYBIND11_MODULE(fast_mutual_information, m) {
         "    alphas (np.array): Zero inflation probabilities (alpha -> 0, pure NB) "
         "(Nfeatures, 1).\n"
         "    min_pop (int): Mininmum bin population.\n\n"
+        "Returns:\n"
+        "    np.array: Array of mutual information values.");
+
+    // Sparse matrix versions
+
+    m.def(
+        "mi_normal_sparse",
+        [](Eigen::SparseMatrix<int>& data, Eigen::VectorXd& means,
+           Eigen::VectorXd& std_devs, int min_pop) -> std::pair<Eigen::MatrixXd, Eigen::MatrixXd> {
+            return mutual_information_normal_sparse(data, means, std_devs, min_pop);
+        },
+        py::arg("data"), py::arg("means"), py::arg("std_devs"),
+        py::arg("min_pop") = 25,
+        "Fast mutual information computation with normally distributed "
+        "marginals using sparse matrix input.\n\n"
+        "Parameters:\n"
+        "    data (scipy.sparse.csr_matrix): Sparse integer data array of shape (Nsamples, "
+        "Nfeatures).\n"
+        "    means (np.array): Means of each normal distribution (Nfeatures, "
+        "1).\n"
+        "    std_devs (np.array): Standard deviations of each normal distribution "
+        "(Nfeatures, 1).\n"
+        "    min_pop (int): Minimum bin population.\n\n"
+        "Returns:\n"
+        "    np.array: Array of mutual information values.");
+
+    m.def(
+        "mi_negative_binomial_sparse",
+        [](Eigen::SparseMatrix<int>& data, Eigen::VectorXd& means,
+           Eigen::VectorXd& concentrations, int min_pop) -> std::pair<Eigen::MatrixXd, Eigen::MatrixXd> {
+            return mutual_information_nb_sparse_direct(data, means, concentrations, min_pop);
+        },
+        py::arg("data"), py::arg("means"), py::arg("concentrations"),
+        py::arg("min_pop") = 25,
+        "Fast mutual information computation with negative binomial "
+        "marginals using sparse matrix input.\n\n"
+        "Parameters:\n"
+        "    data (scipy.sparse.csr_matrix): Sparse integer data array of shape (Nsamples, "
+        "Nfeatures).\n"
+        "    means (np.array): Means of each negative binomial distribution "
+        "(Nfeatures, 1).\n"
+        "    concentrations (np.array): Concentrations of each negative "
+        "binomial distribution (Nfeatures, 1).\n"
+        "    min_pop (int): Minimum bin population.\n\n"
+        "Returns:\n"
+        "    np.array: Array of mutual information values.");
+
+    m.def(
+        "mi_negative_binomial_sparse_input",
+        [](Eigen::SparseMatrix<int>& data, Eigen::VectorXd& means,
+           Eigen::VectorXd& concentrations, int min_pop) -> std::pair<Eigen::MatrixXd, Eigen::MatrixXd> {
+            return mutual_information_nb_sparse_input(data, means, concentrations, min_pop);
+        },
+        py::arg("data"), py::arg("means"), py::arg("concentrations"),
+        py::arg("min_pop") = 25,
+        "Fast mutual information computation with negative binomial "
+        "marginals using sparse matrix input (intermediate dense vectors).\n\n"
+        "Parameters:\n"
+        "    data (scipy.sparse.csr_matrix): Sparse integer data array of shape (Nsamples, "
+        "Nfeatures).\n"
+        "    means (np.array): Means of each negative binomial distribution "
+        "(Nfeatures, 1).\n"
+        "    concentrations (np.array): Concentrations of each negative "
+        "binomial distribution (Nfeatures, 1).\n"
+        "    min_pop (int): Minimum bin population.\n\n"
+        "Returns:\n"
+        "    np.array: Array of mutual information values.");
+
+    m.def(
+        "mi_negative_binomial_sparse_efficient",
+        [](Eigen::SparseMatrix<int>& data, Eigen::VectorXd& means,
+           Eigen::VectorXd& concentrations, int min_pop) -> std::pair<Eigen::MatrixXd, Eigen::MatrixXd> {
+            return mutual_information_nb_sparse_efficient(data, means, concentrations, min_pop);
+        },
+        py::arg("data"), py::arg("means"), py::arg("concentrations"),
+        py::arg("min_pop") = 25,
+        "Fast mutual information computation with negative binomial "
+        "marginals using sparse matrix input (efficient conversion).\n\n"
+        "Parameters:\n"
+        "    data (scipy.sparse.csr_matrix): Sparse integer data array of shape (Nsamples, "
+        "Nfeatures).\n"
+        "    means (np.array): Means of each negative binomial distribution "
+        "(Nfeatures, 1).\n"
+        "    concentrations (np.array): Concentrations of each negative "
+        "binomial distribution (Nfeatures, 1).\n"
+        "    min_pop (int): Minimum bin population.\n\n"
+        "Returns:\n"
+        "    np.array: Array of mutual information values.");
+
+    // Alternative versions that handle conversion from scipy sparse matrices
+    m.def(
+        "mi_normal_sparse_from_scipy",
+        [](py::object scipy_sparse, Eigen::VectorXd& means,
+           Eigen::VectorXd& std_devs, int min_pop) -> std::pair<Eigen::MatrixXd, Eigen::MatrixXd> {
+            // Convert scipy sparse to Eigen sparse
+            Eigen::SparseMatrix<int> data = scipy_sparse.cast<Eigen::SparseMatrix<int>>();
+            return mutual_information_normal_sparse(data, means, std_devs, min_pop);
+        },
+        py::arg("data"), py::arg("means"), py::arg("std_devs"),
+        py::arg("min_pop") = 25,
+        "Fast mutual information computation with normally distributed "
+        "marginals using scipy sparse matrix input.\n\n"
+        "Parameters:\n"
+        "    data (scipy.sparse.csr_matrix): Sparse integer data array of shape (Nsamples, "
+        "Nfeatures).\n"
+        "    means (np.array): Means of each normal distribution (Nfeatures, "
+        "1).\n"
+        "    std_devs (np.array): Standard deviations of each normal distribution "
+        "(Nfeatures, 1).\n"
+        "    min_pop (int): Minimum bin population.\n\n"
+        "Returns:\n"
+        "    np.array: Array of mutual information values.");
+
+    m.def(
+        "mi_negative_binomial_sparse_from_scipy",
+        [](py::object scipy_sparse, Eigen::VectorXd& means,
+           Eigen::VectorXd& concentrations, int min_pop) -> std::pair<Eigen::MatrixXd, Eigen::MatrixXd> {
+            // Convert scipy sparse to Eigen sparse
+            Eigen::SparseMatrix<int> data = scipy_sparse.cast<Eigen::SparseMatrix<int>>();
+            return mutual_information_nb_sparse_direct(data, means, concentrations, min_pop);
+        },
+        py::arg("data"), py::arg("means"), py::arg("concentrations"),
+        py::arg("min_pop") = 25,
+        "Fast mutual information computation with negative binomial "
+        "marginals using scipy sparse matrix input.\n\n"
+        "Parameters:\n"
+        "    data (scipy.sparse.csr_matrix): Sparse integer data array of shape (Nsamples, "
+        "Nfeatures).\n"
+        "    means (np.array): Means of each negative binomial distribution "
+        "(Nfeatures, 1).\n"
+        "    concentrations (np.array): Concentrations of each negative "
+        "binomial distribution (Nfeatures, 1).\n"
+        "    min_pop (int): Minimum bin population.\n\n"
         "Returns:\n"
         "    np.array: Array of mutual information values.");
 

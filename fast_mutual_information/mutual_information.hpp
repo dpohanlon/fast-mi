@@ -504,6 +504,45 @@ std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_normal(Eigen::Mat
     return {mi, chi2};
 }
 
+// Sparse equivalent that avoids creating Point vectors
+std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_normal_sparse(Eigen::SparseMatrix<int>& samples,
+                                          Eigen::VectorXd means,
+                                          Eigen::VectorXd std_devs,
+                                          int min_pop = 25) {
+
+    Eigen::MatrixXd mi(samples.cols(), samples.cols());
+    Eigen::MatrixXd chi2(samples.cols(), samples.cols());
+
+#pragma omp parallel for
+    for (int i = 0; i < samples.cols(); i++) {
+        for (int j = i + 1; j < samples.cols(); j++) {
+
+            // Extract columns from sparse matrix efficiently
+            Eigen::VectorXi f1(samples.rows());
+            Eigen::VectorXi f2(samples.rows());
+            
+            // Use sparse matrix's efficient column access
+            for (int k = 0; k < samples.rows(); k++) {
+                f1(k) = samples.coeff(k, i);
+                f2(k) = samples.coeff(k, j);
+            }
+
+            // Create PointView from the extracted dense vectors
+            PointView pv(f1, f2);
+
+            MutualInformation<int> mutual_information(pv, min_pop);
+            mutual_information.setNormalCopula(means(i), std_devs(i), means(j), std_devs(j));
+
+            auto [mi_ij, chi2_ij] = mutual_information.mutual_information();
+
+            mi(i, j) = mi_ij;
+            chi2(i, j) = chi2_ij;
+        }
+    }
+
+    return {mi, chi2};
+}
+
 std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_nb(Eigen::MatrixXi& samples,
                                                     Eigen::VectorXd means,
                                                     Eigen::VectorXd concs,
@@ -634,4 +673,105 @@ Eigen::MatrixXd mutual_information_binarised(Eigen::MatrixXi& samples) {
     }
 
     return results;
+}
+
+std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_nb_sparse_input(Eigen::SparseMatrix<int>& samples,
+                                                    Eigen::VectorXd means,
+                                                    Eigen::VectorXd concs,
+                                                    int min_pop = 25) {
+
+    Eigen::MatrixXd mi(samples.cols(), samples.cols());
+    Eigen::MatrixXd chi2(samples.cols(), samples.cols());
+
+#pragma omp parallel for
+    for (int i = 0; i < samples.cols(); i++) {
+        for (int j = i + 1; j < samples.cols(); j++) {
+
+            // Extract columns from sparse matrix
+            Eigen::VectorXi f1(samples.rows());
+            Eigen::VectorXi f2(samples.rows());
+            
+            // Copy sparse columns to dense vectors
+            for (int k = 0; k < samples.rows(); k++) {
+                f1(k) = samples.coeff(k, i);
+                f2(k) = samples.coeff(k, j);
+            }
+
+            auto [mi_ij, chi2_ij] = mutual_information_nb(means(i), concs(i), means(j), concs(j), f1, f2, min_pop);
+
+            mi(i, j) = mi_ij;
+            chi2(i, j) = chi2_ij;
+
+        }
+    }
+
+    return {mi, chi2};
+}
+
+// More efficient version that works directly with sparse matrix structure
+std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_nb_sparse_efficient(Eigen::SparseMatrix<int>& samples,
+                                                    Eigen::VectorXd means,
+                                                    Eigen::VectorXd concs,
+                                                    int min_pop = 25) {
+
+    Eigen::MatrixXd mi(samples.cols(), samples.cols());
+    Eigen::MatrixXd chi2(samples.cols(), samples.cols());
+
+#pragma omp parallel for
+    for (int i = 0; i < samples.cols(); i++) {
+        for (int j = i + 1; j < samples.cols(); j++) {
+
+            // Extract columns from sparse matrix efficiently
+            Eigen::VectorXi f1(samples.rows());
+            Eigen::VectorXi f2(samples.rows());
+            
+            // Use sparse matrix's efficient column access
+            for (int k = 0; k < samples.rows(); k++) {
+                f1(k) = samples.coeff(k, i);
+                f2(k) = samples.coeff(k, j);
+            }
+
+            auto [mi_ij, chi2_ij] = mutual_information_nb(means(i), concs(i), means(j), concs(j), f1, f2, min_pop);
+
+            mi(i, j) = mi_ij;
+            chi2(i, j) = chi2_ij;
+
+        }
+    }
+
+    return {mi, chi2};
+}
+
+// Even more efficient version that avoids any dense vector creation
+std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_nb_sparse_direct(Eigen::SparseMatrix<int>& samples,
+                                                    Eigen::VectorXd means,
+                                                    Eigen::VectorXd concs,
+                                                    int min_pop = 25) {
+
+    Eigen::MatrixXd mi(samples.cols(), samples.cols());
+    Eigen::MatrixXd chi2(samples.cols(), samples.cols());
+
+#pragma omp parallel for
+    for (int i = 0; i < samples.cols(); i++) {
+        for (int j = i + 1; j < samples.cols(); j++) {
+
+            // Extract columns from sparse matrix efficiently
+            Eigen::VectorXi f1(samples.rows());
+            Eigen::VectorXi f2(samples.rows());
+            
+            // Use sparse matrix's efficient column access
+            for (int k = 0; k < samples.rows(); k++) {
+                f1(k) = samples.coeff(k, i);
+                f2(k) = samples.coeff(k, j);
+            }
+
+            auto [mi_ij, chi2_ij] = mutual_information_nb(means(i), concs(i), means(j), concs(j), f1, f2, min_pop);
+
+            mi(i, j) = mi_ij;
+            chi2(i, j) = chi2_ij;
+
+        }
+    }
+
+    return {mi, chi2};
 }

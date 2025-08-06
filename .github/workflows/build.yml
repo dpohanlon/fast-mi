@@ -15,10 +15,10 @@ jobs:
         runs-on: ${{ matrix.os }}
         strategy:
             matrix:
-                # os: [ubuntu-latest, macos-13, macos-14]
-                # python-version: ["3.10", "3.11", "3.12", "3.13"]
-                os: [macos-14]
-                python-version: ["3.13"]
+                os: [ubuntu-latest, macos-13, macos-14]
+                python-version: ["3.10", "3.11", "3.12", "3.13"]
+                # os: [macos-14]
+                # python-version: ["3.13"]
 
         steps:
             - uses: actions/checkout@v3
@@ -80,16 +80,18 @@ jobs:
                       mkdir build && cd build
                       cmake .. -DCMAKE_INSTALL_PREFIX=/usr/local
                       make install
-                      # Add deploy key to get NB repo
-                      eval `ssh-agent -s`
-                      ssh-add - <<< '${{ secrets.PRIVATE_SSH_KEY }}'
 
             - name: Run Tests
               if: runner.os == 'Linux'
+              env:
+                  PYVER_NO_DOTS: ${{ matrix.python-version }}
               run: |
                   pip install nose2
-                  pip install scipy
-                  pip install wheelhouse/fast_mutual_information-${{ github.ref_name }}-cp313-cp313-manylinux_2_28_x86_64.whl
+                  pip install scipy seaborn matplotlib
+                  PY_ABI_TAG=cp${PYVER_NO_DOTS//./}
+                  VERSION=$(git describe --tags --abbrev=0)
+                  WHL_PATH=$(ls wheelhouse/fast_mutual_information-${VERSION#v}-${PY_ABI_TAG}*-manylinux_2_28_x86_64.whl)
+                  pip install "$WHL_PATH"
                   cd tests
                   nose2
 
@@ -124,6 +126,7 @@ jobs:
     publish:
         needs: [build_wheels]
         runs-on: ubuntu-latest
+        if: startsWith(github.ref, 'refs/tags')
         steps:
             - uses: actions/download-artifact@v4
               with:
@@ -131,13 +134,11 @@ jobs:
                   path: dist/
                   merge-multiple: true
             - name: Publish to test PyPI
-              if: ${{!startsWith(github.ref, 'refs/tags')}}
               uses: pypa/gh-action-pypi-publish@v1.4.2
               with:
                   password: ${{ secrets.TEST_PYPI_API_TOKEN }}
                   repository_url: https://test.pypi.org/legacy/
             - name: Publish tagged version to PyPI
-              if: startsWith(github.ref, 'refs/tags')
               uses: pypa/gh-action-pypi-publish@v1.4.2
               with:
                   password: ${{ secrets.PYPI_API_TOKEN }}

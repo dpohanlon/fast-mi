@@ -403,23 +403,25 @@ class KDTree {
             }
 
             int axis = depth % 2;
-
-
-            size_t mid = b + cnt/2;
-
-            auto comp = [axis](auto &A, auto &B){
-                return (axis==0 ? A.first.x < B.first.x
-                                : A.first.y < B.first.y);
-            };
-
-            std::nth_element(points_storage.begin()+b,
-                             points_storage.begin()+mid,
-                             points_storage.begin()+e,
-                             comp);
             node->split_dim = axis;
-            node->split_val = (axis==0
-                               ? points_storage[mid].first.x
-                               : points_storage[mid].first.y);
+
+            size_t median_idx = b + cnt / 2;
+            auto comp = [axis](const auto& A, const auto& B) {
+                return (axis == 0 ? A.first.x < B.first.x : A.first.y < B.first.y);
+            };
+            std::nth_element(points_storage.begin() + b,
+                             points_storage.begin() + median_idx,
+                             points_storage.begin() + e,
+                             comp);
+            T split_val = (axis == 0 ? points_storage[median_idx].first.x : points_storage[median_idx].first.y);
+            node->split_val = split_val;
+
+            auto partition_predicate = [axis, split_val](const auto& p) {
+                return (axis == 0 ? p.first.x : p.first.y) < split_val;
+            };
+            auto partition_it = std::partition(points_storage.begin() + b, points_storage.begin() + e, partition_predicate);
+            size_t mid = std::distance(points_storage.begin(), partition_it);
+
 
             if (mid == b || mid == e) {
                 node->is_leaf = true;
@@ -428,12 +430,22 @@ class KDTree {
 
             // carve child bounds
             Bounds<T> L = bounds, R = bounds;
-            if (axis==0) {
-                L.max_x = node->split_val;
-                R.min_x = node->split_val;
-            } else {
-                L.max_y = node->split_val;
-                R.min_y = node->split_val;
+            if (axis == 0) {
+                if (std::is_integral<T>::value) {
+                    L.max_x = split_val - 1;
+                    R.min_x = split_val;
+                } else {
+                    L.max_x = split_val;
+                    R.min_x = split_val;
+                }
+            } else { // axis == 1
+                if (std::is_integral<T>::value) {
+                    L.max_y = split_val - 1;
+                    R.min_y = split_val;
+                } else {
+                    L.max_y = split_val;
+                    R.min_y = split_val;
+                }
             }
 
             // allocate children & assign their ranges

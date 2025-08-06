@@ -427,11 +427,13 @@ std::pair<double, double> mutual_information_nb(double mean1, double conc1, doub
 
 // mi_normal in python
 std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_normal(const Eigen::MatrixXd& samples,
-                                            const Eigen::VectorXd& means,
-                                            const Eigen::VectorXd& std_devs,
-                                            int min_pop = 25) {
-    Eigen::MatrixXd mi(samples.cols(), samples.cols());
-    Eigen::MatrixXd chi2(samples.cols(), samples.cols());
+const Eigen::VectorXd& means,
+const Eigen::VectorXd& std_devs,
+int min_pop = 25) {
+
+    const int F = samples.cols();
+    Eigen::MatrixXd mi   = Eigen::MatrixXd::Zero(F, F);
+    Eigen::MatrixXd chi2 = Eigen::MatrixXd::Zero(F, F);
 
 #pragma omp parallel for
     for (int i = 0; i < samples.cols(); i++) {
@@ -478,12 +480,13 @@ std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_normal(const Eige
 // }
 
 std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_normal(Eigen::MatrixXi& samples,
-                                          Eigen::VectorXd means,
-                                          Eigen::VectorXd std_devs,
-                                          int min_pop = 25) {
+Eigen::VectorXd means,
+Eigen::VectorXd std_devs,
+int min_pop = 25) {
 
-    Eigen::MatrixXd mi(samples.cols(), samples.cols());
-    Eigen::MatrixXd chi2(samples.cols(), samples.cols());
+    const int F = samples.cols();
+    Eigen::MatrixXd mi   = Eigen::MatrixXd::Zero(F, F);
+    Eigen::MatrixXd chi2 = Eigen::MatrixXd::Zero(F, F);
 
 #pragma omp parallel for
     for (int i = 0; i < samples.cols(); i++) {
@@ -505,26 +508,28 @@ std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_normal(Eigen::Mat
 }
 
 // Sparse equivalent that avoids creating Point vectors
-std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_normal_sparse(Eigen::SparseMatrix<int>& samples,
-                                          Eigen::VectorXd means,
-                                          Eigen::VectorXd std_devs,
-                                          int min_pop = 25) {
+std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_normal_sparse(const Eigen::SparseMatrix<int, Eigen::ColMajor>& samples,
+Eigen::VectorXd means,
+Eigen::VectorXd std_devs,
+int min_pop = 25) {
 
-    Eigen::MatrixXd mi(samples.cols(), samples.cols());
-    Eigen::MatrixXd chi2(samples.cols(), samples.cols());
+    const int F = samples.cols();
+    Eigen::MatrixXd mi   = Eigen::MatrixXd::Zero(F, F);
+    Eigen::MatrixXd chi2 = Eigen::MatrixXd::Zero(F, F);
 
 #pragma omp parallel for
     for (int i = 0; i < samples.cols(); i++) {
         for (int j = i + 1; j < samples.cols(); j++) {
 
-            auto pts = convertSparseColumnsToPoints(samples, i, j);
+            auto [f1, f2] = reconstructDenseVectorsFromSparse(samples, i, j);
+            PointView pv(f1, f2);
 
-            MutualInformation<int> mutual_information(pts, min_pop);
+            MutualInformation<int> mutual_information(pv, min_pop);
             mutual_information.setNormalCopula(means(i), std_devs(i), means(j), std_devs(j));
 
             auto [mi_ij, chi2_ij] = mutual_information.mutual_information();
 
-            mi(i, j) = mi_ij;
+            mi(i, j)   = mi_ij;
             chi2(i, j) = chi2_ij;
         }
     }
@@ -533,12 +538,13 @@ std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_normal_sparse(Eig
 }
 
 std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_nb(Eigen::MatrixXi& samples,
-                                                    Eigen::VectorXd means,
-                                                    Eigen::VectorXd concs,
-                                                    int min_pop = 25) {
+Eigen::VectorXd means,
+Eigen::VectorXd concs,
+int min_pop = 25) {
 
-    Eigen::MatrixXd mi(samples.cols(), samples.cols());
-    Eigen::MatrixXd chi2(samples.cols(), samples.cols());
+    const int F = samples.cols();
+    Eigen::MatrixXd mi   = Eigen::MatrixXd::Zero(F, F);
+    Eigen::MatrixXd chi2 = Eigen::MatrixXd::Zero(F, F);
 
 #pragma omp parallel for
     for (int i = 0; i < samples.cols(); i++) {
@@ -559,13 +565,14 @@ std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_nb(Eigen::MatrixX
 }
 
 std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_zinb(Eigen::MatrixXi& samples,
-                                                    Eigen::VectorXd means,
-                                                    Eigen::VectorXd concs,
-                                                    Eigen::VectorXd alphas,
-                                                    int min_pop = 25) {
+Eigen::VectorXd means,
+Eigen::VectorXd concs,
+Eigen::VectorXd alphas,
+int min_pop = 25) {
 
-    Eigen::MatrixXd mi(samples.cols(), samples.cols());
-    Eigen::MatrixXd chi2(samples.cols(), samples.cols());
+    const int F = samples.cols();
+    Eigen::MatrixXd mi   = Eigen::MatrixXd::Zero(F, F);
+    Eigen::MatrixXd chi2 = Eigen::MatrixXd::Zero(F, F);
 
 #pragma omp parallel for
     for (int i = 0; i < samples.cols(); i++) {

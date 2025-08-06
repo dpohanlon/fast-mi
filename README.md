@@ -175,5 +175,3 @@ Optimisations for Integer Inputs
 -------------------------------
 
 The kd-tree in the integer case is calculated on the raw input data, rather than the uniform distribution required for the copula, in order to exploit a 'run length' representation of the data. This keeps track of repeated values, so that the computation needs only happen once for each unique value. When the PDF of the copula is computed for the MI calculation, the CDF transformation is performed on the fly.
-
-This representation also allows faster computation of the pairwise bin contents in the kd-tree, for repeated computation of pairs of input vectors. Here the run-length encoded representations of each vector can be computed once beforehand, and the pairwise encodings can be computed from this.

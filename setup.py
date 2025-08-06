@@ -7,7 +7,7 @@ setup(
     name="fast_mutual_information",
     version="0.1.0",
     description="Fast pairwise mutual information computation.",
-    author="Daniel O'Hanlon",
+    author="Daniel O'Hanlon, Sergio Garcia-Busto",
     author_email="dpohanlon@gmail.com",
     license="MIT",
     packages=['fast_mutual_information'],

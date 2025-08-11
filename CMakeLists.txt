@@ -16,6 +16,8 @@ option(ENABLE_BOOST "Enable Boost Libraries" ON)
 # Option to enable Benchmark (OFF by default)
 option(ENABLE_BENCHMARK "Enable Google Benchmark" OFF)
 
+set(PROJECT_VERSION 0.1)
+
 find_package(Python 3 COMPONENTS Interpreter Development.Module REQUIRED)
 #find_package(pybind11 CONFIG REQUIRED)
 add_subdirectory(extern/pybind11)
@@ -30,32 +32,10 @@ if(ENABLE_BENCHMARK)
     find_package(benchmark REQUIRED)
 endif()
 
-# Include FetchContent module
-#include(FetchContent)
-
-# Declare Google Abseil
-#FetchContent_Declare(
-#    abseil
-#    GIT_REPOSITORY https://github.com/abseil/abseil-cpp.git
-#)
-
-# Optionally set Abseil CMake options before fetching
-#set(absl_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
-#set(absl_BUILD_TESTING OFF CACHE BOOL "" FORCE)
-#set(absl_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-
-# Make Abseil available
-#FetchContent_MakeAvailable(abseil)
-
 if(ENABLE_BOOST)
     # Specify the Boost components you need
     set(BOOST_COMPONENTS filesystem system)
 
-    # Optionally specify the Boost root if it's in a non-standard location
-    # set(BOOST_ROOT "/path/to/boost")
-    # set(BOOST_INCLUDEDIR "/path/to/boost/include")
-    # set(BOOST_LIBRARYDIR "/path/to/boost/lib")
-    #
     set(Boost_USE_STATIC_LIBS ON)
     find_package(Boost 1.70.0 REQUIRED system)
 
@@ -70,16 +50,15 @@ endif()
 
 # Create a library for the core functionality
 add_library(fast_mi_lib STATIC fast_mutual_information/fast_mi.cpp)
-
-# Specify include directories for the library
-target_include_directories(fast_mi_lib PUBLIC fast_mutual_information)
+add_library(FastMI::fast_mi_lib ALIAS fast_mi_lib)
 
 # Add executable target
 add_executable(fast_mi fast_mutual_information/fast_mi.cpp)
 
 target_include_directories(fast_mi_lib PUBLIC
-    fast_mutual_information
-    ${Boost_INCLUDE_DIRS}  # Ensure Boost includes are PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/fast_mutual_information>
+    $<INSTALL_INTERFACE:include/fast_mutual_information>
+    $<$<BOOL:${ENABLE_BOOST}>:${Boost_INCLUDE_DIRS}>
 )
 
 find_package(Threads REQUIRED)
@@ -134,7 +113,20 @@ if(OpenMP_CXX_FOUND)
 endif()
 
 install(TARGETS fast_mutual_information
-        LIBRARY DESTINATION fast_mutual_information)
+    EXPORT FastMITargets
+    ARCHIVE DESTINATION lib
+    LIBRARY DESTINATION lib
+    RUNTIME DESTINATION bin
+    INCLUDES DESTINATION include
+)
+
+install(TARGETS fast_mi_lib
+    EXPORT FastMITargets
+    ARCHIVE DESTINATION lib
+    LIBRARY DESTINATION lib
+    RUNTIME DESTINATION bin
+    INCLUDES DESTINATION include
+)
 
 # Install the executable
 install(TARGETS fast_mi
@@ -144,4 +136,38 @@ install(TARGETS fast_mi
 # Install the Python module
 install(TARGETS fast_mutual_information
     LIBRARY DESTINATION lib/python_modules
+)
+
+# Install header files
+install(DIRECTORY fast_mutual_information/
+    DESTINATION include/fast_mutual_information
+    FILES_MATCHING PATTERN "*.hpp" PATTERN "*.h"
+)
+
+# Export the targets to a CMake script
+install(EXPORT FastMITargets
+    FILE FastMITargets.cmake
+    NAMESPACE FastMI::
+    DESTINATION lib/cmake/FastMI
+)
+
+# Create a package configuration file
+include(CMakePackageConfigHelpers)
+
+write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/FastMIConfigVersion.cmake"
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY AnyNewerVersion
+)
+
+configure_package_config_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/FastMIConfig.cmake.in
+    "${CMAKE_CURRENT_BINARY_DIR}/FastMIConfig.cmake"
+    INSTALL_DESTINATION lib/cmake/FastMI
+)
+
+# Install the package configuration files
+install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/FastMIConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/FastMIConfigVersion.cmake"
+    DESTINATION lib/cmake/FastMI
 )

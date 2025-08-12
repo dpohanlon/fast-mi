@@ -56,8 +56,8 @@ add_library(FastMI::fast_mi_lib ALIAS fast_mi_lib)
 add_executable(fast_mi fast_mutual_information/fast_mi.cpp)
 
 target_include_directories(fast_mi_lib PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/fast_mutual_information>
-    $<INSTALL_INTERFACE:include/fast_mutual_information>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+    $<INSTALL_INTERFACE:include>
     $<$<BOOL:${ENABLE_BOOST}>:${Boost_INCLUDE_DIRS}>
 )
 

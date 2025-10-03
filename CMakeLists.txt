@@ -19,7 +19,7 @@ if(ENABLE_BENCHMARK)
 endif()
 
 # Python + pybind11 (mirror FastNB pattern)
-find_package(Python 3.9 COMPONENTS Interpreter Development.Module REQUIRED)
+find_package(Python COMPONENTS Interpreter Development.Module REQUIRED)
 if(NOT TARGET pybind11::module)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extern/pybind11)
 endif()
@@ -97,10 +97,6 @@ if(OpenMP_CXX_FOUND)
     target_link_libraries(fast_mutual_information PRIVATE OpenMP::OpenMP_CXX)
 endif()
 
-# Install the Python extension into a package dir (mirror FastNB)
-install(TARGETS fast_mutual_information
-        LIBRARY DESTINATION fast_mutual_information)
-
 # Install static lib for native consumers
 install(TARGETS fast_mi_lib
     EXPORT FastMITargets
@@ -110,15 +106,10 @@ install(TARGETS fast_mi_lib
     INCLUDES DESTINATION include
 )
 
-# Install executable
-install(TARGETS fast_mi
-    RUNTIME DESTINATION bin
-)
-
-# Install the Python module again to custom dir (as in FastNB)
 install(TARGETS fast_mutual_information
-    LIBRARY DESTINATION lib/python_modules
-)
+        LIBRARY DESTINATION fast_mutual_information
+        RUNTIME DESTINATION fast_mutual_information
+        ARCHIVE DESTINATION fast_mutual_information)
 
 # Install C++ headers (not Python package files)
 install(DIRECTORY fast_mutual_information/

@@ -10,7 +10,8 @@ setup(
     author="Daniel O'Hanlon",
     author_email="dpohanlon@gmail.com",
     license="MIT",
-    packages=['fast_mutual_information'],
+    packages=find_packages(),
+    include_package_data=True,
     install_requires=[
         "numpy>=1.18.0",
         "pybind11>=2.6",

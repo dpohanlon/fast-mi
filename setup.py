@@ -14,7 +14,6 @@ setup(
     include_package_data=True,
     install_requires=[
         "numpy>=1.18.0",
-        "pybind11>=2.6",
     ],
     classifiers=[
         "Programming Language :: Python :: 3",
@@ -25,6 +24,6 @@ setup(
         "Operating System :: Microsoft :: Windows",
         "Operating System :: MacOS",
     ],
-    python_requires='>=3.9,<4.0',
+    python_requires=">=3.9,<4.0",
     # cmake_args=["-DCMAKE_CXX_STANDARD=11"],
 )

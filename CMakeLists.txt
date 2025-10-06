@@ -35,9 +35,8 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extern/FastNB)
 
 # Boost (optional)
 if(ENABLE_BOOST)
-    set(BOOST_COMPONENTS filesystem system)
-    set(Boost_USE_STATIC_LIBS ON)
-    find_package(Boost 1.70.0 REQUIRED system)
+    set(Boost_USE_STATIC_LIBS OFF)
+    find_package(Boost 1.70 CONFIG REQUIRED headers)
     if(Boost_FOUND)
         message(STATUS "Boost version: ${Boost_VERSION}")
         message(STATUS "Boost include dirs: ${Boost_INCLUDE_DIRS}")
@@ -64,7 +63,7 @@ target_include_directories(fast_mi_lib PUBLIC
 target_link_libraries(fast_mi PRIVATE fast_mi_lib Threads::Threads)
 target_link_libraries(fast_mi PUBLIC Eigen3::Eigen)
 target_link_libraries(fast_mi_lib PUBLIC Eigen3::Eigen FastNB::fast_nb_lib)
-target_link_libraries(fast_mi PRIVATE Boost::headers Boost::system)
+target_link_libraries(fast_mi PRIVATE Boost::headers)
 
 # Python module
 pybind11_add_module(fast_mutual_information fast_mutual_information/bindings.cpp)

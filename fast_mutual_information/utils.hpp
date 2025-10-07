@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Eigen/Dense>
+#include <Eigen/Sparse>
 #include <algorithm>
 #include <limits>
 #include <numeric>
@@ -330,6 +331,73 @@ std::vector<Point<int>> convertSamplesToPoints(
     }
 
     return points;
+}
+
+// merge two sparse columns into a vector<Point<T>> without ever materializing full vectors
+template<typename T>
+std::vector<Point<T>> convertSparseColumnsToPoints(
+    const Eigen::SparseMatrix<T, Eigen::ColMajor>& samp, // Explicitly require ColMajor
+    int ci, int cj)
+{
+    std::vector<Point<T>> pts;
+
+    auto it_i = typename Eigen::SparseMatrix<T, Eigen::ColMajor>::InnerIterator(samp, ci);
+    auto it_j = typename Eigen::SparseMatrix<T, Eigen::ColMajor>::InnerIterator(samp, cj);
+
+    while (it_i && it_j) {
+        if (it_i.row() < it_j.row()) {
+            // Element only exists in column i
+            pts.emplace_back(Point<T>{it_i.value(), 0});
+            ++it_i;
+        }
+        else if (it_j.row() < it_i.row()) {
+            // Element only exists in column j
+            pts.emplace_back(Point<T>{0, it_j.value()});
+            ++it_j;
+        }
+        else {
+            // Element exists in both columns
+            pts.emplace_back(Point<T>{it_i.value(), it_j.value()});
+            ++it_i;
+            ++it_j;
+        }
+    }
+
+    // Process any remaining elements in column i
+    while (it_i) {
+        pts.emplace_back(Point<T>{it_i.value(), 0});
+        ++it_i;
+    }
+
+    // Process any remaining elements in column j
+    while (it_j) {
+        pts.emplace_back(Point<T>{0, it_j.value()});
+        ++it_j;
+    }
+
+    return pts;
+}
+
+// In your C++ file
+std::pair<Eigen::VectorXi, Eigen::VectorXi> reconstructDenseVectorsFromSparse(
+    const Eigen::SparseMatrix<int, Eigen::ColMajor>& samples,
+    int ci, int cj)
+{
+    const int num_samples = samples.rows();
+    Eigen::VectorXi f1 = Eigen::VectorXi::Zero(num_samples);
+    Eigen::VectorXi f2 = Eigen::VectorXi::Zero(num_samples);
+
+    // Populate f1 from the sparse column ci
+    for (Eigen::SparseMatrix<int, Eigen::ColMajor>::InnerIterator it(samples, ci); it; ++it) {
+        f1(it.row()) = it.value();
+    }
+
+    // Populate f2 from the sparse column cj
+    for (Eigen::SparseMatrix<int, Eigen::ColMajor>::InnerIterator it(samples, cj); it; ++it) {
+        f2(it.row()) = it.value();
+    }
+
+    return {f1, f2};
 }
 
 // Function to transform samples from normal to uniform distribution

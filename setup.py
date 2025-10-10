@@ -5,7 +5,7 @@ from setuptools import find_packages
 
 setup(
     name="fast_mutual_information",
-    version="0.1.1",
+    version="0.1.3",
     description="Fast pairwise mutual information computation.",
     author="Daniel O'Hanlon, Sergio Garcia-Busto",
     author_email="dpohanlon@gmail.com",

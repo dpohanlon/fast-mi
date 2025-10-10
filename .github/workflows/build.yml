@@ -113,23 +113,28 @@ jobs:
                   tag: ${{ github.ref_name }}
                   name: Release ${{ github.ref_name }}
                   artifacts: dist/*
-                  artifactContentType: application/gzip
+                  artifactContentType: application/zip
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     publish:
         needs: [build_wheels]
         runs-on: ubuntu-latest
         if: startsWith(github.ref, 'refs/tags')
+
         steps:
             - name: Download all wheel artifacts
               uses: actions/download-artifact@v4
               with:
                   pattern: wheels-*
                   path: dist/
-                  merge-multiple: true
 
-            - name: Ensure flat directory structure for publishing
-              run: find dist -mindepth 2 -type f -name "*.whl" -exec mv {} dist/ \;
+            - name: Move wheels to a flat directory and clean up
+              run: |
+                  find dist -type f -name "*.whl" -exec mv {} dist/ \;
+                  find dist -mindepth 1 -type d -empty -delete
+
+            - name: List files to be published (for debugging)
+              run: ls -R dist
 
             - name: Publish to test PyPI
               uses: pypa/gh-action-pypi-publish@v1.13.0

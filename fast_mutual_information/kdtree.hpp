@@ -19,12 +19,17 @@
 
 // #define DEBUG
 
+enum class MiMode { Copula, Raw };
+
 template <typename T>
 struct KDNode {
 
     Bounds<T> bounds;
 
     std::vector<std::pair<Point<T>, int>> points;
+
+    size_t begin_idx;
+    size_t end_idx;    // one-past-the-last in points_storage
 
     bool is_leaf;
     int split_dim;  // 0 for x, 1 for y
@@ -98,6 +103,10 @@ class KDTree {
     KDTree(const std::vector<Point<T>>& points, Copula<T>* copula,
            int min_points_per_leaf = 10, bool zi = false);
 
+    // No copula, defaults to MiMode::Raw
+    KDTree(const std::vector<Point<T>>& points,
+           int min_points_per_leaf = 10, bool zi = false);
+
     KDTree(std::vector<std::pair<Point<int>, int>>& unique_points, int nPoints,
            Bounds<int> bounds, Copula<int>* copula, int min_points_per_leaf, bool zi = false);
 
@@ -106,6 +115,10 @@ class KDTree {
            Copula<int>* copula,
            int min_points_per_leaf = 10,
            bool zi = false);
+
+    MiMode mode_ = MiMode::Copula;
+
+    void set_mode(MiMode m) { mode_ = m; }
 
     double get_correction() const {
         int depth = get_tree_depth();
@@ -135,6 +148,9 @@ class KDTree {
         return 1 + std::max(left_depth, right_depth);
     }
 
+    template<class F>
+    void for_each_point(F&& emit) const;
+
     int get_tree_depth() const { return calculate_depth(root.get()); }
 
     void dumpSplittingValuesToCSV(const std::string &filename) const;
@@ -145,9 +161,14 @@ class KDTree {
     int total_count;
     bool zi;
 
+    std::vector<std::pair<Point<T>,int>> points_storage;
+
     Copula<T>* copula;
 
     double get_bin_area(const KDNode<T>& node) const;
+
+    template<class F>
+    void for_each_point_impl(const KDNode<int>* node, F&& emit) const;
 
     void dumpSplittingValuesHelper(const KDNode<T>* node, std::ofstream &out, int depth) const;
 
@@ -362,6 +383,104 @@ class KDTree {
                compute_total_count(node->right.get());
     }
 
+    std::unique_ptr<KDNode<T>> buildIterative(Bounds<T> root_bounds) {
+        // all points are already in points_storage
+        //
+        struct Task { KDNode<T>* node; int depth; Bounds<T> bounds; size_t b, e; };
+        std::vector<Task> stack;
+
+        auto root = std::make_unique<KDNode<T>>();
+        root->bounds   = root_bounds;
+        root->begin_idx = 0;
+        root->end_idx   = points_storage.size();
+        root->is_leaf = false;
+
+        stack.reserve(256);
+
+        stack.push_back({root.get(), 0, root_bounds, 0, points_storage.size()});
+
+        while (!stack.empty()) {
+            auto [node, depth, bounds, b, e] = stack.back();
+            stack.pop_back();
+
+            size_t cnt = e - b;
+
+            bool degenerate = (bounds.max_x - bounds.min_x < 1e-8)
+                           || (bounds.max_y - bounds.min_y < 1e-8);
+
+            if (cnt <= size_t(min_points) || degenerate) {
+                node->is_leaf = true;
+                // copy exactly this node’s range into the leaf’s points vector:
+                node->points.assign(
+                    points_storage.begin() + b,
+                    points_storage.begin() + e
+                );
+                continue;
+            }
+
+            int axis = depth % 2;
+            node->split_dim = axis;
+
+            size_t median_idx = b + cnt / 2;
+            auto comp = [axis](const auto& A, const auto& B) {
+                return (axis == 0 ? A.first.x < B.first.x : A.first.y < B.first.y);
+            };
+            std::nth_element(points_storage.begin() + b,
+                             points_storage.begin() + median_idx,
+                             points_storage.begin() + e,
+                             comp);
+            T split_val = (axis == 0 ? points_storage[median_idx].first.x : points_storage[median_idx].first.y);
+            node->split_val = split_val;
+
+            auto partition_predicate = [axis, split_val](const auto& p) {
+                return (axis == 0 ? p.first.x : p.first.y) < split_val;
+            };
+            auto partition_it = std::partition(points_storage.begin() + b, points_storage.begin() + e, partition_predicate);
+            size_t mid = std::distance(points_storage.begin(), partition_it);
+
+
+            if (mid == b || mid == e) {
+                node->is_leaf = true;
+                continue;
+            }
+
+            // carve child bounds
+            Bounds<T> L = bounds, R = bounds;
+            if (axis == 0) {
+                if (std::is_integral<T>::value) {
+                    L.max_x = split_val - 1;
+                    R.min_x = split_val;
+                } else {
+                    L.max_x = split_val;
+                    R.min_x = split_val;
+                }
+            } else { // axis == 1
+                if (std::is_integral<T>::value) {
+                    L.max_y = split_val - 1;
+                    R.min_y = split_val;
+                } else {
+                    L.max_y = split_val;
+                    R.min_y = split_val;
+                }
+            }
+
+            // allocate children & assign their ranges
+            node->left  = std::make_unique<KDNode<T>>();
+            node->left->bounds    = L;
+            node->left->begin_idx = b;
+            node->left->end_idx   = mid;
+            node->right = std::make_unique<KDNode<T>>();
+            node->right->bounds    = R;
+            node->right->begin_idx = mid;
+            node->right->end_idx   = e;
+
+            // schedule deeper splits
+            stack.push_back({node->right.get(), depth+1, R,    mid, e});
+            stack.push_back({node->left.get(),  depth+1, L,    b,   mid});
+        }
+        return root;
+    }
+
     // Can I make the underlying storage here an eigen vector, and then just
     // push it through the NB calculation? Or maybe even populate it with points
     // and the corresponding NB beforehand? -> Take the two Eigen vectors,
@@ -384,8 +503,13 @@ class KDTree {
 
             const double epsilon = 1e-12;
 
-            // Compute log-density with a regularized bin area to avoid log(0)
-            double log_p_xy = std::log(bin_count) - std::log(total_count) - std::log(bin_area + epsilon);
+            double log_p_xy;
+            if (mode_ == MiMode::Raw) {
+                log_p_xy = std::log(bin_count) - std::log(total_count);
+            } else {
+                double bin_area = this->get_bin_area(*node);
+                log_p_xy = std::log(bin_count) - std::log(total_count) - std::log(bin_area + epsilon);
+            }
 
             // Accumulate mutual information contribution from this leaf
             mi += (static_cast<double>(bin_count) / total_count) * log_p_xy;
@@ -425,7 +549,34 @@ KDTree<T>::KDTree(const std::vector<Point<T>>& points, Copula<T>* copula,
 
     Bounds<T> bounds = {0.0, 1.0, 0.0, 1.0};
 
-    root = build(unique_points, 0, bounds, zi);
+    // root = build(unique_points, 0, bounds, zi);
+    points_storage = std::move(unique_points);
+    root = buildIterative(bounds);
+
+    #ifdef DEBUG
+    this->dumpSplittingValuesToCSV("debug_splits.csv");
+    #endif
+}
+
+// Set mode raw, avoid dangling copula being a problem
+template <typename T>
+KDTree<T>::KDTree(const std::vector<Point<T>>& points,
+                  int min_points_per_leaf, bool zi)
+    : min_points(min_points_per_leaf), copula(copula), zi(zi) {
+    total_count = points.size();
+
+    this->set_mode(MiMode::Raw);
+
+    std::vector<std::pair<Point<T>, int>> unique_points(points.size());
+
+    for (int i = 0; i < points.size(); i++) {
+        unique_points[i] = std::make_pair(points[i], 1);
+    }
+
+    Bounds<T> bounds = {0.0, 1.0, 0.0, 1.0};
+
+    points_storage = std::move(unique_points);
+    root = buildIterative(bounds);
 
     #ifdef DEBUG
     this->dumpSplittingValuesToCSV("debug_splits.csv");
@@ -474,7 +625,31 @@ KDTree<int>::KDTree(const std::vector<Point<int>>& points, Copula<int>* copula,
     //                                    bounds.min_x, bounds.max_x,
     //                                    bounds.min_y, bounds.max_y);
 
-    root = build(unique_points, 0, bounds, zi);
+    // root = build(unique_points, 0, bounds, zi);
+
+    points_storage = std::move(unique_points);
+    root = buildIterative(bounds);
+
+    #ifdef DEBUG
+    this->dumpSplittingValuesToCSV("debug_splits.csv");
+    #endif
+}
+
+template <>
+KDTree<int>::KDTree(const std::vector<Point<int>>& points,
+                    int min_points_per_leaf, bool zi)
+    : min_points(min_points_per_leaf), zi(zi) {
+    total_count = points.size();
+
+    this->set_mode(MiMode::Raw);
+
+    std::vector<std::pair<Point<int>, int>> unique_points =
+        count_duplicates_unordered(points);
+
+    Bounds<int> bounds = get_bounds(points);
+
+    points_storage = std::move(unique_points);
+    root = buildIterative(bounds);
 
     #ifdef DEBUG
     this->dumpSplittingValuesToCSV("debug_splits.csv");
@@ -530,7 +705,9 @@ KDTree<int>::KDTree(InputIt first, InputIt last,
     }
 
     // 4) build tree
-    root = build(unique_points, 0, bounds, zi);
+    // root = build(unique_points, 0, bounds, zi);
+    points_storage = std::move(unique_points);
+    root = buildIterative(bounds);
 
   #ifdef DEBUG
     dumpSplittingValuesToCSV("debug_splits.csv");
@@ -573,6 +750,35 @@ double KDTree<int>::get_bin_area(const KDNode<int>& node) const {
     double width  = x_max - x_min;
     double height = y_max - y_min;
     return width * height;
+}
+
+template<typename T>
+template<class F>
+void KDTree<T>::for_each_point(F&& emit) const {
+    for_each_point_impl(root.get(), std::forward<F>(emit));
+}
+
+template<typename T>
+template<class F>
+void KDTree<T>::for_each_point_impl(const KDNode<int>* node, F&& emit) const {
+    if (!node) return;
+
+    if (node->is_leaf) {
+        // node->points holds unique (x,y) with multiplicity in .second
+        for (const auto& pr : node->points) {
+            const int x = pr.first.x;
+            const int y = pr.first.y;
+            const int c = pr.second;
+            if (c > 0) {
+                // emit one discrete atom: (x, y, count)
+                emit(x, y, c);
+            }
+        }
+        return;
+    }
+
+    for_each_point_impl(node->left .get(), std::forward<F>(emit));
+    for_each_point_impl(node->right.get(), std::forward<F>(emit));
 }
 
 template <typename T>

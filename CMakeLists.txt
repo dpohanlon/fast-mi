@@ -33,18 +33,17 @@ find_package(Eigen3 3.4 REQUIRED NO_MODULE)
 # FastNB (in-tree)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extern/FastNB)
 
-# Boost (optional)
 if(ENABLE_BOOST)
     # Specify the Boost components you need
-    set(BOOST_COMPONENTS filesystem system)
+    set(BOOST_COMPONENTS sort)
 
     # Optionally specify the Boost root if it's in a non-standard location
     # set(BOOST_ROOT "/path/to/boost")
     # set(BOOST_INCLUDEDIR "/path/to/boost/include")
     # set(BOOST_LIBRARYDIR "/path/to/boost/lib")
 
-    set(Boost_USE_STATIC_LIBS ON)
-    find_package(Boost 1.70.0 REQUIRED system)
+    set(Boost_USE_STATIC_LIBS OFF)
+    find_package(Boost CONFIG REQUIRED headers)
 
     if(Boost_FOUND)
         message(STATUS "Boost version: ${Boost_VERSION}")

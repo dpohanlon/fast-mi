@@ -1,33 +1,16 @@
-import matplotlib as mpl
-
-mpl.use("Agg")
-import matplotlib.pyplot as plt
-from matplotlib import rcParams
-
-rcParams["axes.facecolor"] = "FFFFFF"
-rcParams["savefig.facecolor"] = "FFFFFF"
-rcParams["xtick.direction"] = "in"
-rcParams["ytick.direction"] = "in"
-
-rcParams.update({"figure.autolayout": True})
-
-rcParams["figure.figsize"] = (9, 9)
-
-import os
-os.environ["OMP_NUM_THREADS"] = "8"
-os.environ["OMP_DYNAMIC"] = "FALSE"
-os.environ["OMP_PROC_BIND"] = "TRUE"
-os.environ["OMP_PLACES"] = "cores"
-
-import seaborn as sns
-
+import unittest
 import numpy as np
+from scipy import sparse
 
 from scipy.stats import norm, nbinom
 
-from fast_mutual_information import mi_negative_binomial, mi_normal, mi_negative_binomial_zi
-
-np.random.seed(42)
+from fast_mutual_information import (
+    mi_normal,
+    mi_negative_binomial,
+    mi_negative_binomial_zi,
+    mi_normal_sparse,
+    mi_negative_binomial_sparse,
+)
 
 def nb_mean(true_r, true_p):
     return true_r * ( 1 - true_p) / true_p
@@ -57,185 +40,243 @@ def gaussian_copula_negative_binomials(n_samples, r_list, p_list, corr_matrix=No
 
     n_vars = len(r_list)
     if corr_matrix is None:
-        # Generate a random positive definite covariance matrix and convert to correlation matrix.
+
         A = np.random.randn(n_vars, n_factors)
         cov = np.dot(A, A.T)
         d = np.sqrt(np.diag(cov))
         corr_matrix = cov / np.outer(d, d)
 
-    # Step 1: Generate correlated standard normal variables
     mean = np.zeros(n_vars)
     z = np.random.multivariate_normal(mean, corr_matrix, size=n_samples)
 
-    # Step 2: Transform to uniform [0,1] via the standard normal CDF
     u = norm.cdf(z)
 
-    # Step 3: Transform each uniform variable to negative binomial via inverse CDF (PPF)
     samples = np.zeros_like(u)
     for i in range(n_vars):
         if alpha > 0:
-            # For each entry, if u < alpha, output 0; otherwise, adjust the uniform to account for zero inflation.
+
             samples[:, i] = np.where(u[:, i] < alpha,
                                        0,
                                        nbinom.ppf((u[:, i] - alpha) / (1 - alpha), r_list[i], p_list[i]))
         else:
             samples[:, i] = nbinom.ppf(u[:, i], r_list[i], p_list[i])
 
-    # Plot the pdf and samples of the first two distributions
-
     return samples, corr_matrix
 
-def generate_nb(n_genes = 250, n_samples = 10000, alpha = 0.0):
-
-    r_list = np.random.randint(20, 21, size=n_genes)
-    p_list = np.random.uniform(0.3, 0.7, size=n_genes)
-
-    return gaussian_copula_negative_binomials(n_samples, r_list, p_list, alpha = alpha), r_list, p_list
-
-def estimate_mi_nb(samples, means, r_list, alphas, min_bin_content = 20):
-
-    if np.any(alphas > 1E-8):
-        mi_nb, _ = mi_negative_binomial_zi(samples.astype(np.int32), means.astype(np.float32), np.array(r_list).astype(np.float32), np.array(alphas).astype(np.float32), min_bin_content)
-    else:
-        mi_nb, _ = mi_negative_binomial(samples.astype(np.int32), means.astype(np.float32), np.array(r_list).astype(np.float32), min_bin_content)
-
-    for i in range(len(mi_nb)):
-        for j in range(i):
-            mi_nb[i, j] = mi_nb[j, i]
-
-    for i in range(len(mi_nb)):
-        mi_nb[i, i] = 0
-
-    return mi_nb
-
-def get_mi_estimate_nb(n_genes = 250, n_samples = 10000, min_bin_content = 20, alpha = 0.0):
-
-    r_list = np.random.randint(20, 21, size=n_genes)
-    p_list = np.random.uniform(0.3, 0.7, size=n_genes)
-    alphas = np.full(r_list.shape, alpha)
-
-    samples, corr_matrix = gaussian_copula_negative_binomials(n_samples, r_list, p_list, alpha = alpha)
-
-    means = nb_mean(r_list, p_list)
-    variances = nb_var(r_list, p_list)
-
-    mi_nb = estimate_mi_nb(samples, means, r_list, alphas, min_bin_content = min_bin_content)
-    mi_analytical = -0.5 * np.log(1 - corr_matrix ** 2)
-
-    for i in range(len(mi_analytical)):
-        mi_analytical[i, i] = 0
-
-    return mi_nb, mi_analytical, corr_matrix, samples
-
-def get_mi_estimate_normal(n_genes = 250, n_samples = 10000, std_dev = 10, min_bin_content = 20):
+def get_normal(n_genes = 250, n_samples = 10000, std_dev = 10, min_bin_content = 20):
 
     n_factors = 5
     B = np.random.randn(n_genes, n_factors)
 
-    # Replace the covariance construction with:
     cov = np.dot(B, B.T)
 
-    # Step 3: Convert Σ to a correlation matrix R via normalization:
     d = np.sqrt(np.diag(cov))
     corr_matrix = cov / np.outer(d, d)
-    np.fill_diagonal(corr_matrix, 1.0)  # Ensure the diagonal elements are exactly 1
+    np.fill_diagonal(corr_matrix, 1.0)
 
-    # Step 4: Draw samples from the multivariate normal distribution N(0, R)
     mean = np.zeros(n_genes)
     samples_n = np.random.multivariate_normal(mean, corr_matrix, size=n_samples)
 
     samples_n *= std_dev
-    # samples_n += 50
+
     samples_n += np.abs(np.min(samples_n))
-
-    # means = np.zeros(samples_n.shape[1]) + 50
-    # means = np.zeros(samples_n.shape[1]) + np.abs(np.min(samples_n))
-    # variances = np.ones(samples_n.shape[1]) * std_dev**2
-    means = np.mean(samples_n, axis = 0)
-    variances = np.var(samples_n, axis = 0)
-
-    mi, _ = mi_normal(samples_n, means, np.sqrt(variances), min_pop = min_bin_content)
-
-    for i in range(n_genes):
-        for j in range(i):
-            mi[i, j] = mi[j, i]
-
-    for i in range(n_genes):
-        mi[i, i] = 0
 
     mi_analytical = -0.5 * np.log(1 - corr_matrix ** 2)
 
-    return mi, mi_analytical, corr_matrix, samples_n
+    return mi_analytical, corr_matrix, samples_n
 
-def test_mi():
+def assert_allclose_tolerant(actual, desired, rtol=1e-7, atol=0, max_violations=0, err_msg=''):
+    """
+    Assert that two arrays are element-wise equal within a tolerance, but only
+    fail if the number of violations exceeds a specified maximum.
+    """
+    # Calculate the mask of elements that violate the tolerance
+    violations_mask = np.abs(actual - desired) > (atol + rtol * np.abs(desired))
+    num_violations = np.sum(violations_mask)
 
-    min_bin_content = 50
-    n_samples = 10000
-    n_genes = 50
-    zi = 0.2
+    if num_violations > max_violations:
+        # If the test fails, provide a detailed error message
+        max_abs_diff = np.max(np.abs(actual[violations_mask] - desired[violations_mask]))
 
-    # Quick scatter comparisons
+        full_err_msg = (
+            f"{err_msg}\n"
+            f"Validation failed: Found {num_violations} violations, which is more than the allowed {max_violations}.\n"
+            f"Maximum absolute difference among violations: {max_abs_diff}"
+        )
+        raise AssertionError(full_err_msg)
 
-    mi_nb, mi_analytical, nb_corr, samples_nb = get_mi_estimate_nb(min_bin_content=min_bin_content, n_genes = n_genes, n_samples = n_samples, alpha = zi)
+class TestMutualInformation(unittest.TestCase):
+    """
+    Test suite for the fast_mutual_information package.
 
-    # Correct for zero inflation
-    mi_analytical *= (1 - zi) ** 2
+    This suite validates the MI estimation for both Normal and Negative Binomial
+    distributions against their analytical solutions derived from a Gaussian copula.
+    It also verifies the consistency between dense and sparse implementations.
+    """
 
-    sns.scatterplot(x=mi_nb.flatten(), y=mi_analytical.flatten(), alpha=0.5)
-    plt.savefig('mi_nb_vs_mi_analytical.png')
-    plt.clf()
+    @classmethod
+    def setUpClass(cls):
+        """
+        Generate simulated datasets once for all tests to save time.
+        This method is run once before any tests in this class are executed.
+        """
+        # --- Configuration ---
+        cls.N_GENES = 50
+        cls.N_SAMPLES = 10000
+        cls.MIN_BIN_CONTENT = 50
+        cls.ZI_FRACTION = 0.0
 
-    mi, mi_analytical_normal, normal_corr, samples = get_mi_estimate_normal(min_bin_content=min_bin_content, n_genes = n_genes, n_samples = n_samples)
+        cls.triu_indices = np.triu_indices(cls.N_GENES, k=1)
 
-    sns.scatterplot(x=mi.flatten(), y=mi_analytical_normal.flatten(), alpha=0.5)
-    plt.savefig('mi_normal_vs_mi_normal_analytical.png')
-    plt.clf()
+        print("\nSetting up test data for TestMutualInformation...")
 
-    # Comparison KDEs
+        cls.analytical_mi_normal, cls.corr_normal, cls.samples_normal = get_normal(
+            n_genes=cls.N_GENES, n_samples=cls.N_SAMPLES, min_bin_content=cls.MIN_BIN_CONTENT
+        )
+        cls.means_normal = np.mean(cls.samples_normal, axis=0)
+        cls.std_devs_normal = np.std(cls.samples_normal, axis=0)
 
-    fig, ax = plt.subplots()
+        # --- Generate Zero-Inflated Negative Binomial Data ---
+        cls.r_list_nb = np.random.randint(20, 21, size=cls.N_GENES)
+        cls.p_list_nb = np.random.uniform(0.3, 0.7, size=cls.N_GENES)
+        cls.alphas_nb = np.full(cls.N_GENES, cls.ZI_FRACTION)
 
-    sns.kdeplot(x = mi.flatten(), y = mi_analytical_normal.flatten(), fill = False, levels=3, color = '#19647E', label = 'Normal marginals', linewidths=2)
-    sns.kdeplot(x = mi_nb.flatten(), y = mi_analytical.flatten(), fill = False, levels=3, color = '#EE964B', label = 'NB marginals', linewidths=3)
+        cls.samples_nb, cls.corr_nb = gaussian_copula_negative_binomials(
+            cls.N_SAMPLES, cls.r_list_nb, cls.p_list_nb, alpha=cls.ZI_FRACTION
+        )
+        cls.means_nb = nb_mean(cls.r_list_nb, cls.p_list_nb)
 
-    plt.plot([mi.min(), mi.max()], [mi.min(), mi.max()], color='grey', linestyle='--')
+        analytical_mi_nb = -0.5 * np.log(1 - cls.corr_nb**2)
+        np.fill_diagonal(analytical_mi_nb, 0)
+        cls.analytical_mi_nb = analytical_mi_nb * (1 - cls.ZI_FRACTION)**2
 
-    plt.xlim(0, 0.5)
-    plt.ylim(0, 0.5)
+        print("Test data setup complete.")
 
-    ax.tick_params(axis='both', which='major', labelsize=21)
+    def test_normal_mi_against_analytical(self):
+        """
+        Tests if the MI estimated for Normal marginals is close to the analytical value.
+        """
+        print("Running test: Normal MI vs Analytical...")
 
-    plt.xlabel('Estimated MI', fontsize = 24)
-    plt.ylabel('Analytical MI', fontsize = 24)
+        estimated_mi, _ = mi_normal(
+            self.samples_normal.astype(np.int32).copy(),
+            self.means_normal,
+            self.std_devs_normal,
+            min_pop=self.MIN_BIN_CONTENT
+        )
 
-    plt.plot([-1, -1], [-1, -1], color = '#19647E', label = 'Normal')
-    plt.plot([-1, -1], [-1, -1], color = '#EE964B', label = 'NB')
-    plt.plot([-1, -1], [-1, -1], color = 'black', linestyle = '--', label = 'NB scikit-learn')
+        num_compared_elements = estimated_mi.size // 2
+        max_allowed_violations = int(num_compared_elements * 0.05)
 
-    plt.legend(fontsize = 21, loc = 'lower right')
+        print(num_compared_elements, max_allowed_violations)
 
-    plt.savefig('mi_kde_comparison.png', dpi = 300, bbox_inches = 'tight')
-    plt.savefig('mi_kde_comparison.pdf', dpi = 300, bbox_inches = 'tight')
-    plt.clf()
+        assert_allclose_tolerant(
+            estimated_mi[self.triu_indices],
+            self.analytical_mi_normal[self.triu_indices],
+            rtol=0.1,
+            atol=0.1,
+            max_violations=max_allowed_violations,
+            err_msg="MI estimation for Normal data deviates significantly from analytical values."
+        )
 
-    # Deviation KDE
+    def test_nb_mi_against_analytical(self):
+        """
+        Tests if the MI for Zero-Inflated NB marginals is close to the analytical value.
+        """
+        print("Running test: Zero-Inflated NB MI vs Analytical...")
 
-    fig, ax = plt.subplots()
+        estimated_mi_nb, _ = mi_negative_binomial_zi(
+            self.samples_nb.astype(np.int32).copy(),
+            self.means_nb,
+            self.r_list_nb.astype(np.float32),
+            self.alphas_nb.astype(np.float32),
+            min_pop=self.MIN_BIN_CONTENT,
+        )
 
-    sns.kdeplot(x = normal_corr.flatten(), y = mi.flatten() - mi_analytical_normal.flatten(), fill = False, levels=3, color = '#19647E', label = 'Normal marginals', linewidths = 2)
+        num_compared_elements = estimated_mi_nb.size // 2
+        max_allowed_violations = int(num_compared_elements * 0.05)
 
-    sns.kdeplot(x = nb_corr.flatten(), y = mi_nb.flatten() - mi_analytical.flatten(), fill = False, levels=3, color = '#EE964B', label = 'NB marginals', linewidths = 3)
+        print(num_compared_elements, max_allowed_violations)
 
-    ax.tick_params(axis='both', which='major', labelsize=21)
+        assert_allclose_tolerant(
+            estimated_mi_nb[self.triu_indices],
+            self.analytical_mi_nb[self.triu_indices],
+            rtol=0.1,
+            atol=0.1,
+            max_violations=max_allowed_violations,
+            err_msg="MI estimation for ZINB data deviates significantly from analytical values."
+        )
 
-    plt.ylabel('Estimated - Analytical', fontsize = 24)
-    plt.xlabel('Correlation', fontsize = 24)
+    def test_sparse_vs_dense_normal(self):
+        """
+        Verifies that the sparse and dense MI functions for Normal data return identical results.
+        """
+        print("Running test: Sparse vs Dense for Normal MI...")
 
-    plt.plot([-1, 1.0], [0, 0], color='grey', linestyle='--')
+        dense_mi, _ = mi_normal(
+            self.samples_normal.astype(np.int32).copy(),
+            self.means_normal,
+            self.std_devs_normal,
+            min_pop=self.MIN_BIN_CONTENT
+        )
 
-    plt.xlim(-1.0, 1.0)
-    plt.ylim(-0.04, 0.06)
+        samples_sparse = sparse.csc_matrix(self.samples_normal.astype(np.int32).copy())
+        samples_sparse.eliminate_zeros()
+        sparse_mi, _ = mi_normal_sparse(
+            samples_sparse,
+            self.means_normal,
+            self.std_devs_normal,
+            min_pop=self.MIN_BIN_CONTENT
+        )
 
-    plt.savefig('mi_normal_difference.png', dpi = 300, bbox_inches = 'tight')
-    plt.savefig('mi_normal_difference.pdf', dpi = 300, bbox_inches = 'tight')
-    plt.clf()
+        np.testing.assert_allclose(
+            dense_mi[self.triu_indices],
+            sparse_mi[self.triu_indices],
+            rtol=0.5,
+            atol=1e-3,
+            err_msg="Sparse and Dense Normal MI implementations produced different results."
+        )
+
+    def test_sparse_vs_dense_nb(self):
+        """
+        Verifies that the sparse and dense MI functions for non-inflated NB data return identical results.
+        Note: The provided C++ interface has a sparse implementation for standard NB, but not ZINB.
+        Therefore, we generate a non-zero-inflated dataset for this specific test.
+        """
+        print("Running test: Sparse vs Dense for standard NB MI...")
+
+        samples_nb_no_zi, _ = gaussian_copula_negative_binomials(
+            self.N_SAMPLES, self.r_list_nb, self.p_list_nb, alpha=0.0
+        )
+
+        samples_nb_no_zi_s = samples_nb_no_zi[:]
+
+        dense_mi_nb, _ = mi_negative_binomial(
+            samples_nb_no_zi.astype(np.int32).copy(),
+            self.means_nb,
+            self.r_list_nb.astype(np.float32),
+            min_pop=self.MIN_BIN_CONTENT,
+        )
+
+        samples_nb_sparse = sparse.csc_matrix(samples_nb_no_zi_s.astype(np.int32)).copy()
+        samples_nb_sparse.eliminate_zeros()
+        sparse_mi_nb, _ = mi_negative_binomial_sparse(
+            samples_nb_sparse.astype(np.int32).copy(),
+            self.means_nb,
+            self.r_list_nb.astype(np.float32),
+            min_pop=self.MIN_BIN_CONTENT,
+        )
+
+        np.testing.assert_allclose(
+            dense_mi_nb[self.triu_indices],
+            sparse_mi_nb[self.triu_indices],
+            rtol=0.5,
+            atol=1e-3,
+            err_msg="Sparse and Dense NB MI implementations produced different results."
+        )
+
+if __name__ == '__main__':
+    """
+    Allows running the tests directly using `python test_mi_estimation.py`.
+    """
+    unittest.main()

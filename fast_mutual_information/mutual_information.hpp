@@ -794,6 +794,9 @@ std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_nb(
         }
     }
 
+    return {mi, chi2};
+}
+
 std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_nb_sparse(
     Eigen::SparseMatrix<int, Eigen::ColMajor>& samples,
     Eigen::VectorXd means,

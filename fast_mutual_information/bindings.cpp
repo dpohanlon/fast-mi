@@ -170,4 +170,24 @@ PYBIND11_MODULE(fast_mutual_information, m) {
         "Returns:\n"
         "    np.array: Array of mutual information values.");
 
+    m.def(
+        "mi_negative_binomial_exposure",
+        [](Eigen::MatrixXi& data,
+           Eigen::VectorXd& means_mu0,
+           Eigen::VectorXd& concentrations,
+           Eigen::VectorXd& exposure,
+           int min_pop) -> std::pair<Eigen::MatrixXd, Eigen::MatrixXd> {
+            return mutual_information_nb(data, means_mu0, concentrations, exposure, min_pop);
+        },
+        py::arg("data"),
+        py::arg("means_mu0"),
+        py::arg("concentrations"),
+        py::arg("exposure"),
+        py::arg("min_pop") = 25,
+        "Fast MI with NB marginals **and per-sample exposure offsets**.\n"
+        "Interpret 'means_mu0' as baseline means on unit exposure; the per-sample\n"
+        "mean is mu_j = mu0 * exposure[j]. The marginal CDF used by the kd-tree is\n"
+        "the mixture F_mix(k) = mean_j F_NB(k; mu0*exposure[j], r)."
+    );
+
 }

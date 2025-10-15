@@ -5,6 +5,7 @@ from .fast_mutual_information import (
     mi_negative_binomial,
     mi_negative_binomial,
     mi_negative_binomial_zi,
+    mi_negative_binomial_exposure,
 )
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "mi_negative_binomial",
     "mi_negative_binomial",
     "mi_negative_binomial_zi",
+    "mi_negative_binomial_exposure",
 ]

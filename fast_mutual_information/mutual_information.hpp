@@ -140,11 +140,23 @@ class MutualInformation {
         return tree.compute_mutual_information();
     }
 
+    void set_exposure(const Eigen::VectorXd& exposure) {
+        exposure_vec = exposure;
+        use_offsets = true;
+    }
+
+    void clear_exposure() {
+        exposure_vec.resize(0);
+        use_offsets = false;
+    }
+
     Copula<T>* copula;
 
    private:
     KDTree<T> tree;
     bool zi = false;
+    Eigen::VectorXd exposure_vec;
+    bool use_offsets = false;
 
 };
 
@@ -201,6 +213,53 @@ std::vector<std::pair<int, int>> sort_pairs(const std::vector<int>& x, const std
 std::vector<int> eigenVectorToStdVector(const Eigen::VectorXi &eigen_vec) {
     // Use the pointer to the first element and the pointer past the last element.
     return std::vector<int>(eigen_vec.data(), eigen_vec.data() + eigen_vec.size());
+}
+
+// Build F_mix[0..Kmax] where F_mix(k) = mean_j F_NB(k; mu0*e_j, r), use for exposure/offset correction
+// counts_col is used only to get Kmax cheaply (max count in this feature).
+// Averaging over cells: F_mix(k) = mean_j F_NB(k; mu0 * exposure[j], r)
+inline std::vector<double> build_nb_mixture_cdf_lookup(
+    const Eigen::VectorXi& counts_col,
+    double mu0,
+    double r,
+    const Eigen::VectorXd& exposure
+) {
+    const int n = static_cast<int>(counts_col.size());
+    const int Kmax = counts_col.maxCoeff();
+
+    std::vector<double> F(Kmax + 1);
+    Eigen::VectorXi kvec(n);
+
+    for (int k = 0; k <= Kmax; ++k) {
+        kvec.setConstant(k);
+        // uses the exposure-aware, block-parallel, no-sort vector CDF
+        Eigen::VectorXd cdf_k = nb2_cdf_vec_eigen_exposure(kvec, mu0, r, exposure);
+        F[k] = cdf_k.mean();
+    }
+    return F;
+}
+
+// ZINB mixture: F_mix(k) = mean_j [ alpha + (1-alpha) * F_NB(k; mu0 * exposure[j], r) ]
+// Not currently plumbed in!
+inline std::vector<double> build_zinb_mixture_cdf_lookup(
+    const Eigen::VectorXi& counts_col,
+    double mu0,
+    double r,
+    double alpha,
+    const Eigen::VectorXd& exposure
+) {
+    const int n = static_cast<int>(counts_col.size());
+    const int Kmax = counts_col.maxCoeff();
+
+    std::vector<double> F(Kmax + 1);
+    Eigen::VectorXi kvec(n);
+
+    for (int k = 0; k <= Kmax; ++k) {
+        kvec.setConstant(k);
+        Eigen::VectorXd cdf_k = zinb2_cdf_vec_eigen_exposure(kvec, mu0, r, alpha, exposure);
+        F[k] = cdf_k.mean();
+    }
+    return F;
 }
 
 float mutual_information_ml(const Eigen::VectorXi &x, const Eigen::VectorXi &y) {
@@ -628,10 +687,76 @@ Eigen::MatrixXd mutual_information_binarised(Eigen::MatrixXi& samples) {
             Eigen::VectorXi f1 = samples.col(i);
             Eigen::VectorXi f2 = samples.col(j);
 
-            // This is overloaded to take two Eigen::VectorXi, rather than a matrix
+            // Overloaded to take two Eigen::VectorXi, rather than a matrix
             results(i, j) = mutual_information_binarised(f1, f2);
         }
     }
 
     return results;
+}
+
+// NEW: pairwise NB with exposures (mu0 on unit exposure)
+std::pair<double, double> mutual_information_nb(
+    double mu0_1, double conc1,
+    double mu0_2, double conc2,
+    const Eigen::VectorXi& f1,
+    const Eigen::VectorXi& f2,
+    const Eigen::VectorXd& exposure,
+    int min_pop = 25
+) {
+
+    std::vector<Point<int>> point_samples = convertSamplesToPoints(f1, f2);
+
+    // Exposure uses a mixture CDF with different effective mean per observation
+
+    // Precompute mixture CDF lookup tables for each axis
+    const auto Fx = build_nb_mixture_cdf_lookup(f1, mu0_1, conc1, exposure);
+    const auto Fy = build_nb_mixture_cdf_lookup(f2, mu0_2, conc2, exposure);
+
+    // Lambdas map integer k -> mixture CDF via table (safe for k in [0..Kmax])
+    auto cdf_x = [Fx](int k) -> double {
+        if (k < 0) return 0.0;
+        if (k < static_cast<int>(Fx.size())) return Fx[k];
+        return 1.0; // robust tail clamp
+    };
+    auto cdf_y = [Fy](int k) -> double {
+        if (k < 0) return 0.0;
+        if (k < static_cast<int>(Fy.size())) return Fy[k];
+        return 1.0;
+    };
+
+    MutualInformation<int> mi(point_samples, min_pop, /*zi=*/false);
+    mi.setCDF(cdf_x, cdf_y);
+    return mi.mutual_information();
+}
+
+// all-pairs NB with exposures; 'means' carries mu0 (baseline) per feature
+std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_nb(
+    Eigen::MatrixXi& samples,
+    Eigen::VectorXd means_mu0,
+    Eigen::VectorXd concs,
+    const Eigen::VectorXd& exposure,
+    int min_pop = 25
+) {
+    const int p = samples.cols();
+    Eigen::MatrixXd mi(p, p);
+    Eigen::MatrixXd chi2(p, p);
+    mi.setZero(); chi2.setZero();
+
+    #pragma omp parallel for
+    for (int i = 0; i < p; ++i) {
+        for (int j = i + 1; j < p; ++j) {
+            const Eigen::VectorXi f1 = samples.col(i);
+            const Eigen::VectorXi f2 = samples.col(j);
+
+            auto result = mutual_information_nb(
+                means_mu0(i), concs(i),
+                means_mu0(j), concs(j),
+                f1, f2, exposure, min_pop
+            );
+            mi(i, j)   = result.first;
+            chi2(i, j) = result.second;
+        }
+    }
+    return {mi, chi2};
 }

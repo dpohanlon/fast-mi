@@ -19,6 +19,14 @@
 // TODO: Take Eigen vectors of means and variances
 //       This is also quite a chunky file, maybe split it up.
 
+void init_parallel()
+{
+    omp_set_dynamic(0);
+
+    Eigen::initParallel();
+    Eigen::setNbThreads(1);
+}
+
 template <typename T>
 class MutualInformation {
    public:
@@ -490,11 +498,13 @@ const Eigen::VectorXd& means,
 const Eigen::VectorXd& std_devs,
 int min_pop = 25) {
 
+    init_parallel();
+
     const int F = samples.cols();
     Eigen::MatrixXd mi   = Eigen::MatrixXd::Zero(F, F);
     Eigen::MatrixXd chi2 = Eigen::MatrixXd::Zero(F, F);
 
-#pragma omp parallel for
+#pragma omp parallel for schedule(dynamic,1)
     for (int i = 0; i < samples.cols(); i++) {
         for (int j = i + 1; j < samples.cols(); j++) {
             auto f1 = samples.col(i);
@@ -519,7 +529,7 @@ int min_pop = 25) {
 //     Eigen::MatrixXd mi(samples.cols(), samples.cols());
 //     Eigen::MatrixXd chi2(samples.cols(), samples.cols());
 
-// #pragma omp parallel for
+// #pragma omp parallel for schedule(dynamic,1)
 //     for (int i = 0; i < samples.cols(); i++) {
 //         for (int j = i + 1; j < samples.cols(); j++) {
 //             // Cast to double so we can use the same point quantisation class,
@@ -543,11 +553,13 @@ Eigen::VectorXd means,
 Eigen::VectorXd std_devs,
 int min_pop = 25) {
 
+    init_parallel();
+
     const int F = samples.cols();
     Eigen::MatrixXd mi   = Eigen::MatrixXd::Zero(F, F);
     Eigen::MatrixXd chi2 = Eigen::MatrixXd::Zero(F, F);
 
-#pragma omp parallel for
+#pragma omp parallel for schedule(dynamic,1)
     for (int i = 0; i < samples.cols(); i++) {
         for (int j = i + 1; j < samples.cols(); j++) {
 
@@ -572,11 +584,13 @@ Eigen::VectorXd means,
 Eigen::VectorXd std_devs,
 int min_pop = 25) {
 
+    init_parallel();
+
     const int F = samples.cols();
     Eigen::MatrixXd mi   = Eigen::MatrixXd::Zero(F, F);
     Eigen::MatrixXd chi2 = Eigen::MatrixXd::Zero(F, F);
 
-#pragma omp parallel for
+#pragma omp parallel for schedule(dynamic,1)
     for (int i = 0; i < samples.cols(); i++) {
         for (int j = i + 1; j < samples.cols(); j++) {
 
@@ -596,20 +610,28 @@ int min_pop = 25) {
     return {mi, chi2};
 }
 
-std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_nb(Eigen::MatrixXi& samples,
-Eigen::VectorXd means,
-Eigen::VectorXd concs,
+std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_nb(
+const Eigen::Ref<const Eigen::MatrixXi>& samples,
+const Eigen::Ref<const Eigen::VectorXd>& means,
+const Eigen::Ref<const Eigen::VectorXd>& concs,
 int min_pop = 25) {
 
+    init_parallel();
+
     const int F = samples.cols();
-    Eigen::MatrixXd mi   = Eigen::MatrixXd::Zero(F, F);
-    Eigen::MatrixXd chi2 = Eigen::MatrixXd::Zero(F, F);
 
-#pragma omp parallel for
+    Eigen::MatrixXd mi(F, F);
+    Eigen::MatrixXd chi2(F, F);
+
+    mi.triangularView<Eigen::Upper>().setZero();
+    chi2.triangularView<Eigen::Upper>().setZero();
+
+    std::cout << "Calculating mutual information for negative binomial distribution..." << std::endl;
+
+#pragma omp parallel for schedule(dynamic,1)
     for (int i = 0; i < samples.cols(); i++) {
+        Eigen::VectorXi f1 = samples.col(i);
         for (int j = i + 1; j < samples.cols(); j++) {
-
-            Eigen::VectorXi f1 = samples.col(i);
             Eigen::VectorXi f2 = samples.col(j);
 
             auto [mi_ij, chi2_ij] = mutual_information_nb(means(i), concs(i), means(j), concs(j), f1, f2, min_pop);
@@ -620,20 +642,29 @@ int min_pop = 25) {
         }
     }
 
+    mi.triangularView<Eigen::Lower>().setZero();
+    chi2.triangularView<Eigen::Lower>().setZero();
+
     return {mi, chi2};
 }
 
-std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_zinb(Eigen::MatrixXi& samples,
-Eigen::VectorXd means,
-Eigen::VectorXd concs,
-Eigen::VectorXd alphas,
+std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_zinb(
+    const Eigen::Ref<const Eigen::MatrixXi>& samples,
+    const Eigen::Ref<const Eigen::VectorXd>& means,
+    const Eigen::Ref<const Eigen::VectorXd>& concs,
+    const Eigen::Ref<const Eigen::VectorXd>& alphas,
 int min_pop = 25) {
 
-    const int F = samples.cols();
-    Eigen::MatrixXd mi   = Eigen::MatrixXd::Zero(F, F);
-    Eigen::MatrixXd chi2 = Eigen::MatrixXd::Zero(F, F);
+    init_parallel();
 
-#pragma omp parallel for
+    const int F = samples.cols();
+    Eigen::MatrixXd mi(F, F);
+    Eigen::MatrixXd chi2(F, F);
+
+    mi.triangularView<Eigen::Upper>().setZero();
+    chi2.triangularView<Eigen::Upper>().setZero();
+
+#pragma omp parallel for schedule(dynamic,1)
     for (int i = 0; i < samples.cols(); i++) {
         for (int j = i + 1; j < samples.cols(); j++) {
 
@@ -648,15 +679,21 @@ int min_pop = 25) {
         }
     }
 
+    mi.triangularView<Eigen::Upper>().setZero();
+    chi2.triangularView<Eigen::Upper>().setZero();
+
     return {mi, chi2};
 }
 
 Eigen::MatrixXd mutual_information_ml(Eigen::MatrixXi& samples) {
+
+    init_parallel();
+
     int ncols = samples.cols();
 
     Eigen::MatrixXd results = Eigen::MatrixXd::Zero(ncols, ncols);
 
-    #pragma omp parallel for
+    #pragma omp parallel for schedule(dynamic,1)
     for (int i = 0; i < ncols; i++) {
         for (int j = i + 1; j < ncols; j++) {
             results(i, j) = mutual_information_ml(samples.col(i), samples.col(j));
@@ -713,9 +750,11 @@ double mutual_information_binarised(Eigen::VectorXi f1, Eigen::VectorXi f2) {
 
 Eigen::MatrixXd mutual_information_binarised(Eigen::MatrixXi& samples) {
 
+    init_parallel();
+
     Eigen::MatrixXd results(samples.cols(), samples.cols());
 
-#pragma omp parallel for
+#pragma omp parallel for schedule(dynamic,1)
     for (int i = 0; i < samples.cols(); i++) {
         for (int j = i + 1; j < samples.cols(); j++) {
 
@@ -767,32 +806,40 @@ std::pair<double, double> mutual_information_nb(
 
 // all-pairs NB with exposures; 'means' carries mu0 (baseline) per feature
 std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_nb(
-    Eigen::MatrixXi& samples,
-    Eigen::VectorXd means_mu0,
-    Eigen::VectorXd concs,
-    const Eigen::VectorXd& exposure,
+    const Eigen::Ref<const Eigen::MatrixXi>& samples,
+    const Eigen::Ref<const Eigen::VectorXd>& means,
+    const Eigen::Ref<const Eigen::VectorXd>& alphas,
+    const Eigen::Ref<const Eigen::VectorXd>& exposure,
     int min_pop = 25
 ) {
-    const int p = samples.cols();
-    Eigen::MatrixXd mi(p, p);
-    Eigen::MatrixXd chi2(p, p);
-    mi.setZero(); chi2.setZero();
 
-    #pragma omp parallel for
-    for (int i = 0; i < p; ++i) {
-        for (int j = i + 1; j < p; ++j) {
+    init_parallel();
+
+    const int F = samples.cols();
+    Eigen::MatrixXd mi(F, F);
+    Eigen::MatrixXd chi2(F, F);
+
+    mi.triangularView<Eigen::Upper>().setZero();
+    chi2.triangularView<Eigen::Upper>().setZero();
+
+    #pragma omp parallel for schedule(dynamic,1)
+    for (int i = 0; i < F; ++i) {
+        for (int j = i + 1; j < F; ++j) {
             const Eigen::VectorXi f1 = samples.col(i);
             const Eigen::VectorXi f2 = samples.col(j);
 
             auto result = mutual_information_nb(
-                means_mu0(i), concs(i),
-                means_mu0(j), concs(j),
+                means(i), alphas(i),
+                means(j), alphas(j),
                 f1, f2, exposure, min_pop
             );
             mi(i, j)   = result.first;
             chi2(i, j) = result.second;
         }
     }
+
+    mi.triangularView<Eigen::Lower>().setZero();
+    chi2.triangularView<Eigen::Lower>().setZero();
 
     return {mi, chi2};
 }
@@ -807,7 +854,7 @@ std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_nb_sparse(
     Eigen::MatrixXd mi   = Eigen::MatrixXd::Zero(F, F);
     Eigen::MatrixXd chi2 = Eigen::MatrixXd::Zero(F, F);
 
-    #pragma omp parallel for
+    #pragma omp parallel for schedule(dynamic,1)
     for (int i = 0; i < F; ++i) {
         for (int j = i + 1; j < F; ++j) {
 

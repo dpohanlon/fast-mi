@@ -4,6 +4,7 @@
 #include <pybind11/operators.h>
 #include <Eigen/Sparse>
 
+#include <type_traits>
 #include <cmath>
 #include <csetjmp>
 #include <csignal>
@@ -58,58 +59,61 @@ auto safe_execute(Func&& f) -> decltype(f()) {
                              ") detected during mutual information computation");
 }
 
-void check_all_finite(const Eigen::Ref<const Eigen::MatrixXd>& m,
-                      const char* name) {
-    if (!m.allFinite()) {
-        throw py::value_error(std::string(name) +
-                              " contains NaN or Inf values");
-    }
-}
-
-void check_non_negative(const Eigen::Ref<const Eigen::MatrixXi>& m,
-                        const char* name) {
-    if ((m.array() < 0).any()) {
-        throw py::value_error(std::string(name) +
-                              " must contain non-negative integers");
-    }
-}
-
-void check_positive(const Eigen::Ref<const Eigen::VectorXd>& v,
-                    const char* name) {
-    if (!v.allFinite() || (v.array() <= 0).any()) {
-        throw py::value_error(std::string(name) +
-                              " must contain positive, finite values");
-    }
-}
-
-void check_probabilities(const Eigen::Ref<const Eigen::VectorXd>& v,
-                         const char* name) {
-    if (!v.allFinite() || (v.array() < 0).any() || (v.array() > 1).any()) {
-        throw py::value_error(std::string(name) +
-                              " must contain values in the range [0, 1]");
-    }
-}
-
-void check_matrix_shape(const Eigen::Ref<const Eigen::MatrixXd>& m,
-                        const char* name) {
+template <typename Derived>
+void check_matrix_shape(const Eigen::DenseBase<Derived>& m, const char* name) {
     if (m.rows() == 0 || m.cols() == 0) {
-        throw py::value_error(std::string(name) +
-                              " must have at least one row and one column");
+        throw py::value_error(std::string(name) + " must have at least one row and one column");
     }
 }
 
-void check_matrix_shape(const Eigen::Ref<const Eigen::MatrixXi>& m,
-                        const char* name) {
-    if (m.rows() == 0 || m.cols() == 0) {
-        throw py::value_error(std::string(name) +
-                              " must have at least one row and one column");
-    }
-}
-
-void check_vector_size(const Eigen::Ref<const Eigen::VectorXd>& v,
-                       const char* name) {
+template <typename Derived>
+void check_vector_size(const Eigen::DenseBase<Derived>& v, const char* name) {
     if (v.size() == 0) {
         throw py::value_error(std::string(name) + " must be non-empty");
+    }
+}
+
+template <typename Derived>
+void check_non_negative(const Eigen::DenseBase<Derived>& m, const char* name) {
+    if ((m.derived().array() < typename Derived::Scalar(0)).any()) {
+        throw py::value_error(std::string(name) + " must contain non-negative values");
+    }
+}
+
+template <typename Derived>
+void check_positive(const Eigen::DenseBase<Derived>& v, const char* name) {
+    using Scalar = typename Derived::Scalar;
+    if constexpr (std::is_floating_point_v<Scalar>) {
+        if (!(v.derived().array().isFinite().all()) ||
+            (v.derived().array() <= Scalar(0)).any()) {
+            throw py::value_error(std::string(name) + " must contain positive, finite values");
+        }
+    } else {
+        if ((v.derived().array() <= Scalar(0)).any()) {
+            throw py::value_error(std::string(name) + " must contain positive values");
+        }
+    }
+}
+
+template <typename Derived>
+void check_probabilities(const Eigen::DenseBase<Derived>& v, const char* name) {
+    using Scalar = typename Derived::Scalar;
+    static_assert(std::is_floating_point_v<Scalar>,
+                  "check_probabilities expects a floating-point vector");
+    if (!(v.derived().array().isFinite().all()) ||
+        (v.derived().array() < Scalar(0)).any() ||
+        (v.derived().array() > Scalar(1)).any()) {
+        throw py::value_error(std::string(name) + " must contain values in the range [0, 1]");
+    }
+}
+
+template <typename Derived>
+void check_all_finite(const Eigen::DenseBase<Derived>& m, const char* name) {
+    using Scalar = typename Derived::Scalar;
+    if constexpr (std::is_floating_point_v<Scalar>) {
+        if (!(m.derived().array().isFinite().all())) {
+            throw py::value_error(std::string(name) + " contains NaN or Inf values");
+        }
     }
 }
 
@@ -118,6 +122,7 @@ void check_min_pop(int min_pop) {
         throw py::value_error("min_pop must be positive");
     }
 }
+
 }  // namespace
 
 PYBIND11_MODULE(fast_mutual_information, m) {
@@ -315,8 +320,8 @@ PYBIND11_MODULE(fast_mutual_information, m) {
 
     m.def(
         "mi_negative_binomial",
-        [](Eigen::MatrixXi& data, Eigen::VectorXd& means,
-           Eigen::VectorXd& concentrations,
+        [](py::EigenDRef<const Eigen::MatrixXi> data, py::EigenDRef<const Eigen::VectorXd> means,
+           py::EigenDRef<const Eigen::VectorXd> concentrations,
            int min_pop) -> std::pair<Eigen::MatrixXd, Eigen::MatrixXd> {
             check_matrix_shape(data, "data");
             check_vector_size(means, "means");
@@ -333,12 +338,14 @@ PYBIND11_MODULE(fast_mutual_information, m) {
             check_positive(means, "means");
             check_positive(concentrations, "concentrations");
             check_min_pop(min_pop);
+
             return safe_execute([&] {
+                py::gil_scoped_release nogil;
                 return mutual_information_nb(data, means, concentrations,
                                              min_pop);
             });
         },
-        py::arg("data"), py::arg("means"), py::arg("concentrations"),
+        py::arg("data").noconvert(), py::arg("means").noconvert(), py::arg("concentrations").noconvert(),
         py::arg("min_pop") = 25,
         "Fast mutual information computation with negative binomial "
         "marginals.\n\n"
@@ -355,9 +362,8 @@ PYBIND11_MODULE(fast_mutual_information, m) {
 
     m.def(
         "mi_negative_binomial_zi",
-        [](Eigen::MatrixXi& data, Eigen::VectorXd& means,
-           Eigen::VectorXd& concentrations, Eigen::VectorXd& alphas,
-           int min_pop) -> std::pair<Eigen::MatrixXd, Eigen::MatrixXd> {
+        [](py::EigenDRef<const Eigen::MatrixXi> data, py::EigenDRef<const Eigen::VectorXd> means, py::EigenDRef<const Eigen::VectorXd> concentrations, py::EigenDRef<const Eigen::VectorXd> alphas,
+        int min_pop) -> std::pair<Eigen::MatrixXd, Eigen::MatrixXd> {
             check_matrix_shape(data, "data");
             check_vector_size(means, "means");
             check_vector_size(concentrations, "concentrations");
@@ -378,12 +384,13 @@ PYBIND11_MODULE(fast_mutual_information, m) {
             check_probabilities(alphas, "alphas");
             check_min_pop(min_pop);
             return safe_execute([&] {
+                py::gil_scoped_release nogil;
                 return mutual_information_zinb(data, means, concentrations,
                                                alphas, min_pop);
             });
         },
-        py::arg("data"), py::arg("means"), py::arg("concentrations"),
-        py::arg("alphas"), py::arg("min_pop") = 25,
+        py::arg("data").noconvert(), py::arg("means").noconvert(), py::arg("concentrations").noconvert(),
+        py::arg("alphas").noconvert(), py::arg("min_pop") = 25,
         "Fast mutual information computation with negative binomial "
         "marginals.\n\n"
         "Parameters:\n"
@@ -402,17 +409,40 @@ PYBIND11_MODULE(fast_mutual_information, m) {
 
     m.def(
         "mi_negative_binomial_exposure",
-        [](Eigen::MatrixXi& data,
-           Eigen::VectorXd& means_mu0,
-           Eigen::VectorXd& concentrations,
-           Eigen::VectorXd& exposure,
-           int min_pop) -> std::pair<Eigen::MatrixXd, Eigen::MatrixXd> {
-            return mutual_information_nb(data, means_mu0, concentrations, exposure, min_pop);
+        [](py::EigenDRef<const Eigen::MatrixXi> data, py::EigenDRef<const Eigen::VectorXd> means, py::EigenDRef<const Eigen::VectorXd> concentrations, py::EigenDRef<const Eigen::VectorXd> exposure,
+        int min_pop) -> std::pair<Eigen::MatrixXd, Eigen::MatrixXd> {
+
+            check_matrix_shape(data, "data");
+            check_vector_size(means, "means");
+            check_vector_size(concentrations, "concentrations");
+            check_vector_size(exposure, "exposure");
+            if (data.cols() != means.size() ||
+                data.cols() != concentrations.size() ||
+                data.cols() != exposure.size()) {
+                throw py::value_error(
+                    "data columns must match length of means, concentrations "
+                    "and exposure");
+            }
+            check_non_negative(data, "data");
+            check_all_finite(means, "means");
+            check_all_finite(concentrations, "concentrations");
+            check_all_finite(exposure, "exposure");
+            check_positive(means, "means");
+            check_positive(concentrations, "concentrations");
+            check_probabilities(exposure, "exposure");
+            check_min_pop(min_pop);
+
+            return safe_execute([&] {
+                py::gil_scoped_release nogil;
+                return mutual_information_nb(data, means, concentrations,
+                                               exposure, min_pop);
+            });
+
         },
-        py::arg("data"),
-        py::arg("means_mu0"),
-        py::arg("concentrations"),
-        py::arg("exposure"),
+        py::arg("data").noconvert(),
+        py::arg("means").noconvert(),
+        py::arg("concentrations").noconvert(),
+        py::arg("exposure").noconvert(),
         py::arg("min_pop") = 25,
         "Fast MI with NB marginals **and per-sample exposure offsets**.\n"
         "Interpret 'means_mu0' as baseline means on unit exposure; the per-sample\n"

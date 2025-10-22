@@ -10,6 +10,7 @@ from fast_mutual_information import (
     mi_negative_binomial_zi,
     mi_normal_sparse,
     mi_negative_binomial_sparse,
+    mi_negative_binomial_exposure,
 )
 
 def nb_mean(true_r, true_p):
@@ -61,6 +62,33 @@ def gaussian_copula_negative_binomials(n_samples, r_list, p_list, corr_matrix=No
         else:
             samples[:, i] = nbinom.ppf(u[:, i], r_list[i], p_list[i])
 
+    return samples, corr_matrix
+
+def gaussian_copula_negative_binomials_with_exposure(n_samples, r_list, mu0_list, exposure, corr_matrix=None, random_state=None, alpha=0.0):
+    n_vars = len(r_list)
+    if corr_matrix is None:
+        n_factors = 10
+        A = np.random.randn(n_vars, n_factors)
+        cov = np.dot(A, A.T)
+        d = np.sqrt(np.diag(cov))
+        corr_matrix = cov / np.outer(d, d)
+
+    mean = np.zeros(n_vars)
+    z = np.random.multivariate_normal(mean, corr_matrix, size=n_samples)
+    u = norm.cdf(z)
+
+    samples = np.zeros_like(u)
+    for i in range(n_vars):
+        r = r_list[i]
+        mu0 = mu0_list[i]
+        m_j = mu0 * exposure  # per-sample means
+        p_j = r / (m_j + r)
+        if alpha > 0:
+            uc = np.clip((u[:, i] - alpha) / (1 - alpha), 0, 1)
+            draw = np.array([nbinom.ppf(uc[j], r, p_j[j]) for j in range(n_samples)])
+            samples[:, i] = np.where(u[:, i] < alpha, 0, draw)
+        else:
+            samples[:, i] = np.array([nbinom.ppf(u[j, i], r, p_j[j]) for j in range(n_samples)])
     return samples, corr_matrix
 
 def get_normal(n_genes = 250, n_samples = 10000, std_dev = 10, min_bin_content = 20):
@@ -158,8 +186,15 @@ class TestMutualInformation(unittest.TestCase):
         """
         print("Running test: Normal MI vs Analytical...")
 
+        # estimated_mi, _ = mi_normal(
+        #     self.samples_normal.astype(np.int32).copy(),
+        #     self.means_normal,
+        #     self.std_devs_normal,
+        #     min_pop=self.MIN_BIN_CONTENT
+        # )
+
         estimated_mi, _ = mi_normal(
-            self.samples_normal.astype(np.int32).copy(),
+            self.samples_normal.astype(np.float64).copy(),
             self.means_normal,
             self.std_devs_normal,
             min_pop=self.MIN_BIN_CONTENT
@@ -273,6 +308,92 @@ class TestMutualInformation(unittest.TestCase):
             rtol=0.5,
             atol=1e-3,
             err_msg="Sparse and Dense NB MI implementations produced different results."
+        )
+
+    def test_nb_exposure_equivalence_when_exposure_one(self):
+        n = self.N_SAMPLES
+        p = self.N_GENES
+
+        exposure = np.ones(n)
+        # Use the same NB data generator you already use
+        samples_nb_no_zi, _ = gaussian_copula_negative_binomials(
+            n, self.r_list_nb, self.p_list_nb, alpha=0.0
+        )
+
+        # Non-exposure call (means as usual)
+        dense_mi_nb, _ = mi_negative_binomial(
+            samples_nb_no_zi.astype(np.int32).copy(),
+            nb_mean(self.r_list_nb, self.p_list_nb),
+            self.r_list_nb.astype(np.float32),
+            min_pop=self.MIN_BIN_CONTENT,
+        )
+
+        # Exposure-aware call with mu0 chosen so that mu_j = mu0 * 1 equals the same means
+        mu0 = nb_mean(self.r_list_nb, self.p_list_nb)
+        exp_mi_nb, _ = mi_negative_binomial_exposure(
+            samples_nb_no_zi.astype(np.int32).copy(),
+            mu0.astype(np.float64),
+            self.r_list_nb.astype(np.float64),
+            exposure.astype(np.float64),
+            min_pop=self.MIN_BIN_CONTENT,
+        )
+
+        np.testing.assert_allclose(
+            dense_mi_nb[self.triu_indices],
+            exp_mi_nb[self.triu_indices],
+            rtol=1e-6,
+            atol=1e-8,
+            err_msg="Exposure path (all ones) did not coincide with non-exposure NB MI."
+        )
+
+    def test_nb_exposure_reparameterization_invariance(self):
+        n = self.N_SAMPLES
+        rng = np.random.default_rng(42)
+
+        # Heterogeneous exposure, normalized once (this is fine)
+        exposure = rng.lognormal(mean=0.0, sigma=0.6, size=n)
+        exposure = exposure / exposure.mean()
+
+        r = self.r_list_nb.astype(np.float64)
+        mu0 = nb_mean(r, self.p_list_nb).astype(np.float64)  # baseline with mean(exposure)=1
+
+        # Generate counts with (mu0, exposure)
+        samples_nb, _ = gaussian_copula_negative_binomials_with_exposure(
+            n_samples=n,
+            r_list=r,
+            mu0_list=mu0,
+            exposure=exposure,
+            alpha=0.0
+        )
+
+        # MI with (mu0, exposure)
+        mi_a, _ = mi_negative_binomial_exposure(
+            samples_nb.astype(np.int32).copy(),
+            mu0,
+            r,
+            exposure.astype(np.float64),
+            min_pop=self.MIN_BIN_CONTENT,
+        )
+
+        # Scale exposure by c and scale mu0 by 1/c
+        c = 3.0
+        exposure_scaled = exposure * c
+        mu0_scaled = mu0 / c
+
+        mi_b, _ = mi_negative_binomial_exposure(
+            samples_nb.astype(np.int32).copy(),
+            mu0_scaled,
+            r,
+            exposure_scaled.astype(np.float64),
+            min_pop=self.MIN_BIN_CONTENT,
+        )
+
+        np.testing.assert_allclose(
+            mi_a[self.triu_indices],
+            mi_b[self.triu_indices],
+            rtol=1e-8,
+            atol=1e-10,
+            err_msg="Exposure reparameterization invariance (mu0<-mu0/c, exposure<-exposure*c) failed."
         )
 
 if __name__ == '__main__':

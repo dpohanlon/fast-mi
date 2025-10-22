@@ -12,6 +12,7 @@
 #include <unordered_map>
 #include <vector>
 #include <fstream>
+#include <type_traits>
 
 #include "copula.hpp"
 #include "point.hpp"
@@ -131,11 +132,10 @@ class KDTree {
     }
 
     std::pair<double, double> compute_mutual_information() const {
-        double mi    = 0.0;
-        double area  = 0.0;
-        double chi2  = 0.0;
-        traverse_and_compute(root.get(), mi, area, chi2);
-        return { mi, chi2 };
+        double mi = 0.0, area = 0.0, chi2 = 0.0;
+        const double root_area_u = compute_root_area_u();
+        traverse_and_compute(root.get(), root_area_u, mi, area, chi2);
+        return {mi, chi2};
     }
 
     int calculate_depth(const KDNode<T>* node) const {
@@ -171,6 +171,22 @@ class KDTree {
     void for_each_point_impl(const KDNode<int>* node, F&& emit) const;
 
     void dumpSplittingValuesHelper(const KDNode<T>* node, std::ofstream &out, int depth) const;
+
+    double compute_root_area_u() const {
+        if (mode_ == MiMode::Raw) return 1.0;
+        if constexpr (std::is_integral<T>::value) {
+            const auto& b = root->bounds;
+            const double x_lo = (b.min_x > std::numeric_limits<int>::min())
+                                    ? copula->cdf_x(b.min_x - 1) : 0.0;
+            const double x_hi = copula->cdf_x(b.max_x);
+            const double y_lo = (b.min_y > std::numeric_limits<int>::min())
+                                    ? copula->cdf_y(b.min_y - 1) : 0.0;
+            const double y_hi = copula->cdf_y(b.max_y);
+            return std::max(1e-15, (x_hi - x_lo) * (y_hi - y_lo));
+        } else {
+            return 1.0;
+        }
+    }
 
     // For ints this can be optimised by sorting!
 
@@ -491,42 +507,44 @@ class KDTree {
                (static_cast<double>(total_count) * bin_area);
     }
 
-    void traverse_and_compute(const KDNode<T>* node, double& mi,
-                              double& area, double& chi2) const {
+    void traverse_and_compute(const KDNode<T>* node,
+                              const double root_area_u,
+                              double& mi,
+                              double& area,
+                              double& chi2) const {
         if (!node) return;
 
         if (node->is_leaf) {
-            int bin_count = node->total_counts();
+            const int bin_count = node->total_counts();
             if (bin_count == 0) return;
 
-            double bin_area = this->get_bin_area(*node);
-
-            const double epsilon = 1e-12;
+            const double bin_area = this->get_bin_area(*node);
 
             double log_p_xy;
+            double expected_count;
+
             if (mode_ == MiMode::Raw) {
                 log_p_xy = std::log(bin_count) - std::log(total_count);
+                expected_count = static_cast<double>(total_count) * bin_area;
             } else {
-                double bin_area = this->get_bin_area(*node);
-                log_p_xy = std::log(bin_count) - std::log(total_count) - std::log(bin_area + epsilon);
+                log_p_xy = std::log(bin_count) - std::log(total_count)
+                         - std::log(bin_area + 1e-12)
+                         + std::log(root_area_u);
+                expected_count = static_cast<double>(total_count) * (bin_area / root_area_u);
             }
 
-            // Accumulate mutual information contribution from this leaf
             mi += (static_cast<double>(bin_count) / total_count) * log_p_xy;
-
             area += bin_area;
 
-            double expected_count = static_cast<double>(total_count) * bin_area;
-            if (expected_count > 0) {
-                double diff = static_cast<double>(bin_count) - expected_count;
+            if (expected_count > 0.0) {
+                const double diff = static_cast<double>(bin_count) - expected_count;
                 chi2 += diff * diff / expected_count;
             }
-
             return;
         }
 
-        traverse_and_compute(node->left.get(), mi, area, chi2);
-        traverse_and_compute(node->right.get(), mi, area, chi2);
+        traverse_and_compute(node->left.get(),  root_area_u, mi, area, chi2);
+        traverse_and_compute(node->right.get(), root_area_u, mi, area, chi2);
     }
 };
 

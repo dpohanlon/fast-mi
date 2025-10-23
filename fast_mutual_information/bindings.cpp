@@ -417,11 +417,13 @@ PYBIND11_MODULE(fast_mutual_information, m) {
             check_vector_size(concentrations, "concentrations");
             check_vector_size(exposure, "exposure");
             if (data.cols() != means.size() ||
-                data.cols() != concentrations.size() ||
-                data.cols() != exposure.size()) {
+                data.cols() != concentrations.size()) {
                 throw py::value_error(
-                    "data columns must match length of means, concentrations "
-                    "and exposure");
+                    "data columns must match length of means, concentrations");
+            }
+            if (data.rows() != exposure.size()) {
+                throw py::value_error(
+                    "data rows must match length of exposure");
             }
             check_non_negative(data, "data");
             check_all_finite(means, "means");
@@ -429,7 +431,7 @@ PYBIND11_MODULE(fast_mutual_information, m) {
             check_all_finite(exposure, "exposure");
             check_positive(means, "means");
             check_positive(concentrations, "concentrations");
-            check_probabilities(exposure, "exposure");
+            check_positive(exposure, "exposure");
             check_min_pop(min_pop);
 
             return safe_execute([&] {

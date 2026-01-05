@@ -438,9 +438,10 @@ class KDTree {
             auto partition_it = std::partition(points_storage.begin() + b, points_storage.begin() + e, partition_predicate);
             size_t mid = std::distance(points_storage.begin(), partition_it);
 
-
             if (mid == b || mid == e) {
                 node->is_leaf = true;
+                node->points.assign(points_storage.begin() + b,
+                                    points_storage.begin() + e);
                 continue;
             }
 
@@ -734,23 +735,31 @@ double KDTree<T>::get_bin_area(const KDNode<T>& node) const {
     return node.get_bin_area();
 }
 
-
 template <>
 double KDTree<int>::get_bin_area(const KDNode<int>& node) const {
-    // lower CDF edge = F(k-1), but clamp at zero
-    int lo_x = node.bounds.min_x - 1;
-    int lo_y = node.bounds.min_y - 1;
-    double x_min = (lo_x >= 0 ? copula->cdf_x(lo_x) : 0.0);
-    double y_min = (lo_y >= 0 ? copula->cdf_y(lo_y) : 0.0);
+    const int lo_x = node.bounds.min_x - 1;
+    const int lo_y = node.bounds.min_y - 1;
 
-    // upper edge always = F(k)
+    double x_min = copula->cdf_x(lo_x);
+    double y_min = copula->cdf_y(lo_y);
+
     double x_max = copula->cdf_x(node.bounds.max_x);
     double y_max = copula->cdf_y(node.bounds.max_y);
 
-    double width  = x_max - x_min;
-    double height = y_max - y_min;
+    auto clamp01 = [](double u) {
+        if (u < 0.0) return 0.0;
+        if (u > 1.0) return 1.0;
+        return u;
+    };
+
+    x_min = clamp01(x_min); y_min = clamp01(y_min);
+    x_max = clamp01(x_max); y_max = clamp01(y_max);
+
+    const double width  = x_max - x_min;
+    const double height = y_max - y_min;
     return width * height;
 }
+
 
 template<typename T>
 template<class F>

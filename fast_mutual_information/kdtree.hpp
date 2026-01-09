@@ -760,7 +760,6 @@ double KDTree<int>::get_bin_area(const KDNode<int>& node) const {
     return width * height;
 }
 
-
 template<typename T>
 template<class F>
 void KDTree<T>::for_each_point(F&& emit) const {

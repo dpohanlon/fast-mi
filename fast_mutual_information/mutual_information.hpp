@@ -366,8 +366,8 @@ std::pair<double, double> mutual_information_nb(double mean1, double conc1, doub
 std::pair<double, double> mutual_information_zinb(double mean1, double conc1, double alpha1, double mean2,
                              double conc2, double alpha2, std::vector<Point<int>>& data,
                              int min_pop = 25) {
-    auto cdf_x = [=](int x) -> double { return (x < 0) ? 0.0 : nb2_cdf_single(x, mean1, conc1); };
-    auto cdf_y = [=](int y) -> double { return (y < 0) ? 0.0 : nb2_cdf_single(y, mean2, conc2); };
+    auto cdf_x = [=](int x) -> double { return (x < 0) ? 0.0 : zinb2_cdf_single(x, mean1, conc1, alpha1); };
+    auto cdf_y = [=](int y) -> double { return (y < 0) ? 0.0 : zinb2_cdf_single(y, mean2, conc2, alpha2); };
 
     MutualInformation<int> mi(data, min_pop, true);
     mi.setCDF(cdf_x, cdf_y);

@@ -44,8 +44,8 @@ class MutualInformation {
                       int nPoints, Bounds<int> bounds, int max_points_per_leaf, bool zi = false);
 
     template<typename ColVec>
-    MutualInformation(const PointView<ColVec>& data, int min_pop = 10)
-      : zi(false)
+    MutualInformation(const PointView<ColVec>& data, int min_pop = 10, bool zi = false)
+      : zi(zi)
     {
         this->copula = new Copula<T>();
         setData(data, min_pop);
@@ -156,6 +156,10 @@ class MutualInformation {
     void clear_exposure() {
         exposure_vec.resize(0);
         use_offsets = false;
+    }
+
+    void dumpTreeToCSV(const std::string& filename) const {
+        tree.dumpSplittingValuesToCSV(filename);
     }
 
     Copula<T>* copula;
@@ -415,6 +419,7 @@ std::pair<double, double>  mutual_information_quantised(double mean1, double std
                                      point_samples, min_pop);
 }
 
+
 // Without RLE, 3
 std::pair<double, double> mutual_information_nb(double mean1, double conc1, double mean2,
                              double conc2, std::vector<Point<int>>& data,
@@ -464,6 +469,37 @@ std::pair<double, double>  mutual_information_zinb(double mean1, double conc1, d
     return mutual_information_zinb(mean1, conc1, alpha1, mean2, conc2, alpha2, point_samples,
                                  min_pop);
 }
+
+int
+mutual_information_zinb_dump_first_tree(Eigen::MatrixXi& samples,
+                                       Eigen::VectorXd means,
+                                       Eigen::VectorXd concs,
+                                       Eigen::VectorXd alphas,
+                                       const std::string& csv_filename,
+                                       int min_pop = 25) {
+    const int F = samples.cols();
+
+    // Compute (0,1) sequentially so we can dump its tree once.
+    if (F >= 2) {
+        PointView pv01(samples.col(0), samples.col(1));
+        MutualInformation<int> mi01(pv01, min_pop, true);
+
+        auto cdf_x = [=](int x) -> double {
+            return (x < 0) ? 0.0 : zinb2_cdf_single(x, means(0), concs(0), alphas(0));
+        };
+        auto cdf_y = [=](int y) -> double {
+            return (y < 0) ? 0.0 : zinb2_cdf_single(y, means(1), concs(1), alphas(1));
+        };
+
+        mi01.setCDF(cdf_x, cdf_y);
+
+        (void)mi01.mutual_information();
+        mi01.dumpTreeToCSV(csv_filename);
+    }
+
+    return 0;
+}
+
 
 // Mutual information with NB distributed marginals, RLE
 std::pair<double, double> mutual_information_nb(double mean1, double conc1, double mean2,

@@ -361,6 +361,52 @@ PYBIND11_MODULE(fast_mutual_information, m) {
         "    np.array: Array of mutual information values.");
 
     m.def(
+        "mi_zero_inflated_negative_binomial_dump_first_tree",
+        [](Eigen::MatrixXi& data, Eigen::VectorXd& means,
+           Eigen::VectorXd& concentrations, Eigen::VectorXd& alphas,
+           const std::string& csv_filename,
+           int min_pop) -> int {
+            check_matrix_shape(data, "data");
+            check_vector_size(means, "means");
+            check_vector_size(concentrations, "concentrations");
+            check_vector_size(alphas, "alphas");
+            if (data.cols() != means.size() ||
+                data.cols() != concentrations.size() ||
+                data.cols() != alphas.size()) {
+                throw py::value_error(
+                    "data columns must match length of means, concentrations, and alphas");
+            }
+            check_non_negative(data, "data");
+            check_all_finite(means, "means");
+            check_all_finite(concentrations, "concentrations");
+            check_all_finite(alphas, "alphas");
+            check_positive(means, "means");
+            check_positive(concentrations, "concentrations");
+            check_min_pop(min_pop);
+
+            safe_execute([&] {
+                return mutual_information_zinb_dump_first_tree(
+                    data, means, concentrations, alphas, csv_filename, min_pop);
+            });
+        },
+        py::arg("data"), py::arg("means"), py::arg("concentrations"),
+        py::arg("alphas"),
+        py::arg("csv_filename"),
+        py::arg("min_pop") = 25,
+        "Compute zero-inflated negative-binomial mutual information internally and dump the "
+        "KD-tree splits for the first feature pair (0,1) to a CSV file.\n\n"
+        "Parameters:\n"
+        "    data (np.array): Integer data array of shape (Nsamples, Nfeatures).\n"
+        "    means (np.array): Means of each ZINB marginal (Nfeatures, 1).\n"
+        "    concentrations (np.array): Concentrations of each ZINB marginal (Nfeatures, 1).\n"
+        "    alphas (np.array): Zero-inflation parameters of each ZINB marginal (Nfeatures, 1).\n"
+        "    csv_filename (str): Output path for the CSV dump.\n"
+        "    min_pop (int): Minimum bin population.\n\n"
+        "Returns:\n"
+        "    int");
+
+
+    m.def(
         "mi_negative_binomial_zi",
         [](py::EigenDRef<const Eigen::MatrixXi> data, py::EigenDRef<const Eigen::VectorXd> means, py::EigenDRef<const Eigen::VectorXd> concentrations, py::EigenDRef<const Eigen::VectorXd> alphas,
         int min_pop) -> std::pair<Eigen::MatrixXd, Eigen::MatrixXd> {

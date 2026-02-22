@@ -138,3 +138,47 @@ Eigen::MatrixXd sampleMultivariateNormal(const Eigen::VectorXd& mean,
 
     return result;
 }
+
+// Continuity-corrected Normal PMF for integer x
+double normal_pmf_discrete(int x, double mean, double stddev) {
+    if (stddev <= 0.0) {
+        throw std::invalid_argument("Standard deviation must be positive.");
+    }
+
+    boost::math::normal dist(mean, stddev);
+    double lo = boost::math::cdf(dist, x - 0.5);
+    double hi = boost::math::cdf(dist, x + 0.5);
+
+    double pmf = hi - lo;
+    // Guard against tiny numerical negatives near the tails
+    return (pmf < 0.0) ? 0.0 : pmf;
+}
+
+// Continuity-corrected Normal CDF for integer x
+double normal_cdf_discrete(int x, double mean, double stddev) {
+    if (stddev <= 0.0) {
+        throw std::invalid_argument("Standard deviation must be positive.");
+    }
+
+    boost::math::normal dist(mean, stddev);
+    return boost::math::cdf(dist, x + 0.5);
+}
+
+double normal_pit_discrete(int x, double mean, double stddev, std::mt19937& rng) {
+    if (stddev <= 0.0) {
+        throw std::invalid_argument("Standard deviation must be positive.");
+    }
+
+    boost::math::normal dist(mean, stddev);
+    double lo = boost::math::cdf(dist, x - 0.5);
+    double hi = boost::math::cdf(dist, x + 0.5);
+
+    std::uniform_real_distribution<double> uni(0.0, 1.0);
+    double u = lo + uni(rng) * (hi - lo);
+
+    // Clamp to avoid exact 0 or 1
+    const double eps = 1e-12;
+    if (u < eps) u = eps;
+    if (u > 1.0 - eps) u = 1.0 - eps;
+    return u;
+}

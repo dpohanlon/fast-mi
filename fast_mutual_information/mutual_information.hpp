@@ -94,20 +94,20 @@ class MutualInformation {
     void setNormalPMF(double mean1, double std_dev1, double mean2,
                       double std_dev2) {
         this->copula->p_x = [mean1, std_dev1](double x) -> double {
-            return normal_pdf(x, mean1, std_dev1);
+            return normal_pmf_discrete(x, mean1, std_dev1);
         };
         this->copula->p_y = [mean2, std_dev2](double y) -> double {
-            return normal_pdf(y, mean2, std_dev2);
+            return normal_pmf_discrete(y, mean2, std_dev2);
         };
     }
 
     void setNormalCDF(double mean1, double std_dev1, double mean2,
                       double std_dev2) {
         this->copula->cdf_x = [mean1, std_dev1](double x) -> double {
-            return normal_cdf(x, mean1, std_dev1);
+            return normal_cdf_discrete(x, mean1, std_dev1);
         };
         this->copula->cdf_y = [mean2, std_dev2](double y) -> double {
-            return normal_cdf(y, mean2, std_dev2);
+            return normal_cdf_discrete(y, mean2, std_dev2);
         };
     }
 
@@ -419,8 +419,9 @@ std::pair<double, double>  mutual_information_quantised(double mean1, double std
 std::pair<double, double> mutual_information_nb(double mean1, double conc1, double mean2,
                              double conc2, std::vector<Point<int>>& data,
                              int min_pop = 25) {
-    auto cdf_x = [=](int x) -> double { return nb2_cdf_single(x, mean1, conc1); };
-    auto cdf_y = [=](int y) -> double { return nb2_cdf_single(y, mean2, conc2); };
+
+    auto cdf_x = [=](int x) -> double { return (x < 0) ? 0.0 : nb2_cdf_single(x, mean1, conc1); };
+    auto cdf_y = [=](int y) -> double { return (y < 0) ? 0.0 : nb2_cdf_single(y, mean2, conc2); };
 
     MutualInformation<int> mi(data, min_pop);
     mi.setCDF(cdf_x, cdf_y);
@@ -432,8 +433,8 @@ std::pair<double, double> mutual_information_nb(double mean1, double conc1, doub
 std::pair<double, double> mutual_information_zinb(double mean1, double conc1, double alpha1, double mean2,
                              double conc2, double alpha2, std::vector<Point<int>>& data,
                              int min_pop = 25) {
-    auto cdf_x = [=](int x) -> double { return zinb2_cdf_single(x, mean1, conc1, alpha1); };
-    auto cdf_y = [=](int y) -> double { return zinb2_cdf_single(y, mean2, conc2, alpha2); };
+    auto cdf_x = [=](int x) -> double { return (x < 0) ? 0.0 : zinb2_cdf_single(x, mean1, conc1, alpha1); };
+    auto cdf_y = [=](int y) -> double { return (y < 0) ? 0.0 : zinb2_cdf_single(y, mean2, conc2, alpha2); };
 
     MutualInformation<int> mi(data, min_pop, true);
     mi.setCDF(cdf_x, cdf_y);
@@ -470,8 +471,9 @@ std::pair<double, double> mutual_information_nb(double mean1, double conc1, doub
                              std::vector<std::pair<Point<int>, int>>& data,
                              int nPoints, Bounds<int> bounds,
                              int min_pop = 10) {
-    auto cdf_x = [=](int x) -> double { return nb2_cdf_single(x, mean1, conc1); };
-    auto cdf_y = [=](int y) -> double { return nb2_cdf_single(y, mean2, conc2); };
+
+    auto cdf_x = [=](int x) -> double { return (x < 0) ? 0.0 : nb2_cdf_single(x, mean1, conc1); };
+    auto cdf_y = [=](int y) -> double { return (y < 0) ? 0.0 : nb2_cdf_single(y, mean2, conc2); };
 
     MutualInformation<int> mi(data, nPoints, bounds, min_pop);
     mi.setCDF(cdf_x, cdf_y);

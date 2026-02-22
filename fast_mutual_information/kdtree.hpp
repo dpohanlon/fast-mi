@@ -400,102 +400,198 @@ class KDTree {
                compute_total_count(node->right.get());
     }
 
+    long long range_mass(size_t b, size_t e) const {
+        long long s = 0;
+        for (size_t i = b; i < e; ++i) s += (long long)points_storage[i].second;
+        return s;
+    }
+
+    bool is_degenerate_bounds(const Bounds<T>& bounds) const {
+        if constexpr (std::is_integral<T>::value) {
+            return (bounds.min_x >= bounds.max_x) || (bounds.min_y >= bounds.max_y);
+        } else {
+            return (bounds.max_x - bounds.min_x < 1e-8) || (bounds.max_y - bounds.min_y < 1e-8);
+        }
+    }
+
+    static inline T coord_of(const std::pair<Point<T>, int>& pr, int axis) {
+        return (axis == 0) ? pr.first.x : pr.first.y;
+    }
+
+    void sort_range_by_axis(size_t b, size_t e, int axis) {
+        auto comp = [axis](const auto& A, const auto& B) {
+            return coord_of(A, axis) < coord_of(B, axis);
+        };
+        std::sort(points_storage.begin() + b, points_storage.begin() + e, comp);
+    }
+
+    T first_coord(size_t b, int axis) const {
+        return coord_of(points_storage[b], axis);
+    }
+
+    T last_coord(size_t e, int axis) const {
+        return coord_of(points_storage[e - 1], axis);
+    }
+
+    T first_coord_greater_than(size_t b, size_t e, int axis, T v0) const {
+        for (size_t i = b; i < e; ++i) {
+            const T v = coord_of(points_storage[i], axis);
+            if (v > v0) return v;
+        }
+        return v0; // caller must check v0 != max_coord first
+    }
+
+    T choose_integer_cut_weighted(
+        size_t b, size_t e,
+        int axis,
+        long long mass
+    ) const {
+        // Assumes [b,e) is already sorted by coord(axis)
+        const T min_c = first_coord(b, axis);
+        const long long target = (mass + 1) / 2;
+
+        long long cum = 0;
+
+        // Iterate by blocks of equal coordinate
+        for (size_t i = b; i < e; ) {
+            const T v = coord_of(points_storage[i], axis);
+
+            long long block_mass = 0;
+            size_t j = i;
+            while (j < e && coord_of(points_storage[j], axis) == v) {
+                block_mass += (long long)points_storage[j].second;
+                ++j;
+            }
+
+            // cut = v means left is coord < v, so require v > min_c to ensure non-empty left.
+            if (cum + block_mass >= target && v > min_c) {
+                return v;
+            }
+
+            cum += block_mass;
+            i = j;
+        }
+
+        // If we never crossed target at a v>min_c, fall back to the first coord > min_c.
+        // Caller should have checked min_c != max_c, so this exists.
+        return first_coord_greater_than(b, e, axis, min_c);
+    }
+
+    size_t lower_bound_coord(size_t b, size_t e, int axis, T cut) const {
+        // Assumes [b,e) sorted by coord(axis). Returns first idx with coord >= cut.
+        size_t i = b;
+        while (i < e && coord_of(points_storage[i], axis) < cut) ++i;
+        return i;
+    }
+
+    void carve_child_bounds(
+        const Bounds<T>& parent,
+        int axis,
+        T cut,
+        Bounds<T>& L,
+        Bounds<T>& R
+    ) const {
+        L = parent;
+        R = parent;
+
+        if (axis == 0) {
+            if constexpr (std::is_integral<T>::value) {
+                L.max_x = cut - 1;
+                R.min_x = cut;
+            } else {
+                L.max_x = cut;
+                R.min_x = cut;
+            }
+        } else {
+            if constexpr (std::is_integral<T>::value) {
+                L.max_y = cut - 1;
+                R.min_y = cut;
+            } else {
+                L.max_y = cut;
+                R.min_y = cut;
+            }
+        }
+    }
+
+    void make_leaf(KDNode<T>* node, size_t b, size_t e) const {
+        node->is_leaf = true;
+        node->points.assign(points_storage.begin() + b, points_storage.begin() + e);
+    }
+
     std::unique_ptr<KDNode<T>> buildIterative(Bounds<T> root_bounds) {
-        // all points are already in points_storage
-        //
         struct Task { KDNode<T>* node; int depth; Bounds<T> bounds; size_t b, e; };
         std::vector<Task> stack;
 
         auto root = std::make_unique<KDNode<T>>();
-        root->bounds   = root_bounds;
+        root->bounds    = root_bounds;
         root->begin_idx = 0;
         root->end_idx   = points_storage.size();
-        root->is_leaf = false;
+        root->is_leaf   = false;
 
         stack.reserve(256);
-
         stack.push_back({root.get(), 0, root_bounds, 0, points_storage.size()});
 
         while (!stack.empty()) {
             auto [node, depth, bounds, b, e] = stack.back();
             stack.pop_back();
 
-            size_t cnt = e - b;
-
-            bool degenerate = (bounds.max_x - bounds.min_x < 1e-8)
-                           || (bounds.max_y - bounds.min_y < 1e-8);
-
-            if (cnt <= size_t(min_points) || degenerate) {
-                node->is_leaf = true;
-                // copy exactly this node’s range into the leaf’s points vector:
-                node->points.assign(
-                    points_storage.begin() + b,
-                    points_storage.begin() + e
-                );
+            const size_t cnt = e - b;
+            if (cnt == 0) {
+                make_leaf(node, b, e);
                 continue;
             }
 
-            int axis = depth % 2;
+            const bool degenerate = is_degenerate_bounds(bounds);
+            const long long mass = range_mass(b, e);
+
+            if (degenerate || mass <= (long long)min_points) {
+                make_leaf(node, b, e);
+                continue;
+            }
+
+            const int axis = depth % 2;
             node->split_dim = axis;
 
-            size_t median_idx = b + cnt / 2;
-            auto comp = [axis](const auto& A, const auto& B) {
-                return (axis == 0 ? A.first.x < B.first.x : A.first.y < B.first.y);
-            };
-            std::nth_element(points_storage.begin() + b,
-                             points_storage.begin() + median_idx,
-                             points_storage.begin() + e,
-                             comp);
-            T split_val = (axis == 0 ? points_storage[median_idx].first.x : points_storage[median_idx].first.y);
-            node->split_val = split_val;
+            // Work in sorted coordinate order for stable integer cuts.
+            sort_range_by_axis(b, e, axis);
 
-            auto partition_predicate = [axis, split_val](const auto& p) {
-                return (axis == 0 ? p.first.x : p.first.y) < split_val;
-            };
-            auto partition_it = std::partition(points_storage.begin() + b, points_storage.begin() + e, partition_predicate);
-            size_t mid = std::distance(points_storage.begin(), partition_it);
+            const T min_c = first_coord(b, axis);
+            const T max_c = last_coord(e, axis);
 
-            if (mid == b || mid == e) {
-                node->is_leaf = true;
-                node->points.assign(points_storage.begin() + b,
-                                    points_storage.begin() + e);
+            if (min_c == max_c) {
+                make_leaf(node, b, e);
                 continue;
             }
 
-            // carve child bounds
-            Bounds<T> L = bounds, R = bounds;
-            if (axis == 0) {
-                if (std::is_integral<T>::value) {
-                    L.max_x = split_val - 1;
-                    R.min_x = split_val;
-                } else {
-                    L.max_x = split_val;
-                    R.min_x = split_val;
-                }
-            } else { // axis == 1
-                if (std::is_integral<T>::value) {
-                    L.max_y = split_val - 1;
-                    R.min_y = split_val;
-                } else {
-                    L.max_y = split_val;
-                    R.min_y = split_val;
-                }
+            const T cut = choose_integer_cut_weighted(b, e, axis, mass);
+            node->split_val = cut;
+
+            const size_t mid = lower_bound_coord(b, e, axis, cut);
+
+            if (mid == b || mid == e) {
+                // If this happens, either the data are effectively constant on this axis
+                // or numeric/pathological; safest is to stop.
+                make_leaf(node, b, e);
+                continue;
             }
 
-            // allocate children & assign their ranges
+            Bounds<T> L, R;
+            carve_child_bounds(bounds, axis, cut, L, R);
+
             node->left  = std::make_unique<KDNode<T>>();
             node->left->bounds    = L;
             node->left->begin_idx = b;
             node->left->end_idx   = mid;
+
             node->right = std::make_unique<KDNode<T>>();
             node->right->bounds    = R;
             node->right->begin_idx = mid;
             node->right->end_idx   = e;
 
-            // schedule deeper splits
-            stack.push_back({node->right.get(), depth+1, R,    mid, e});
-            stack.push_back({node->left.get(),  depth+1, L,    b,   mid});
+            stack.push_back({node->right.get(), depth + 1, R, mid, e});
+            stack.push_back({node->left.get(),  depth + 1, L, b,   mid});
         }
+
         return root;
     }
 

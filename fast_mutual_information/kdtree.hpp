@@ -173,19 +173,20 @@ class KDTree {
     void dumpSplittingValuesHelper(const KDNode<T>* node, std::ofstream &out, int depth) const;
 
     double compute_root_area_u() const {
-        if (mode_ == MiMode::Raw) return 1.0;
-        if constexpr (std::is_integral<T>::value) {
-            const auto& b = root->bounds;
-            const double x_lo = (b.min_x > std::numeric_limits<int>::min())
-                                    ? copula->cdf_x(b.min_x - 1) : 0.0;
-            const double x_hi = copula->cdf_x(b.max_x);
-            const double y_lo = (b.min_y > std::numeric_limits<int>::min())
-                                    ? copula->cdf_y(b.min_y - 1) : 0.0;
-            const double y_hi = copula->cdf_y(b.max_y);
-            return std::max(1e-15, (x_hi - x_lo) * (y_hi - y_lo));
-        } else {
-            return 1.0;
-        }
+        // if (mode_ == MiMode::Raw) return 1.0;
+        // if constexpr (std::is_integral<T>::value) {
+        //     const auto& b = root->bounds;
+        //     const double x_lo = (b.min_x > std::numeric_limits<int>::min())
+        //                             ? copula->cdf_x(b.min_x - 1) : 0.0;
+        //     const double x_hi = copula->cdf_x(b.max_x);
+        //     const double y_lo = (b.min_y > std::numeric_limits<int>::min())
+        //                             ? copula->cdf_y(b.min_y - 1) : 0.0;
+        //     const double y_hi = copula->cdf_y(b.max_y);
+        //     return std::max(1e-15, (x_hi - x_lo) * (y_hi - y_lo));
+        // } else {
+        //     return 1.0;
+        // }
+        return 1.0;
     }
 
     // For ints this can be optimised by sorting!
@@ -457,6 +458,8 @@ class KDTree {
 
             if (mid == b || mid == e) {
                 node->is_leaf = true;
+                node->points.assign(points_storage.begin() + b,
+                                    points_storage.begin() + e);
                 continue;
             }
 

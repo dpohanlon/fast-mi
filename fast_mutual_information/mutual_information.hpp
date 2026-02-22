@@ -623,8 +623,8 @@ int min_pop = 25) {
     Eigen::MatrixXd mi(F, F);
     Eigen::MatrixXd chi2(F, F);
 
-    mi.triangularView<Eigen::Upper>().setZero();
-    chi2.triangularView<Eigen::Upper>().setZero();
+    mi.triangularView<Eigen::Lower>().setZero();
+    chi2.triangularView<Eigen::Lower>().setZero();
 
     std::cout << "Calculating mutual information for negative binomial distribution..." << std::endl;
 
@@ -661,8 +661,8 @@ int min_pop = 25) {
     Eigen::MatrixXd mi(F, F);
     Eigen::MatrixXd chi2(F, F);
 
-    mi.triangularView<Eigen::Upper>().setZero();
-    chi2.triangularView<Eigen::Upper>().setZero();
+    mi.triangularView<Eigen::Lower>().setZero();
+    chi2.triangularView<Eigen::Lower>().setZero();
 
 #pragma omp parallel for schedule(dynamic,1)
     for (int i = 0; i < samples.cols(); i++) {
@@ -679,8 +679,8 @@ int min_pop = 25) {
         }
     }
 
-    mi.triangularView<Eigen::Upper>().setZero();
-    chi2.triangularView<Eigen::Upper>().setZero();
+    mi.triangularView<Eigen::Lower>().setZero();
+    chi2.triangularView<Eigen::Lower>().setZero();
 
     return {mi, chi2};
 }
@@ -808,7 +808,7 @@ std::pair<double, double> mutual_information_nb(
 std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_nb(
     const Eigen::Ref<const Eigen::MatrixXi>& samples,
     const Eigen::Ref<const Eigen::VectorXd>& means,
-    const Eigen::Ref<const Eigen::VectorXd>& alphas,
+    const Eigen::Ref<const Eigen::VectorXd>& concs,
     const Eigen::Ref<const Eigen::VectorXd>& exposure,
     int min_pop = 25
 ) {
@@ -819,8 +819,8 @@ std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_nb(
     Eigen::MatrixXd mi(F, F);
     Eigen::MatrixXd chi2(F, F);
 
-    mi.triangularView<Eigen::Upper>().setZero();
-    chi2.triangularView<Eigen::Upper>().setZero();
+    mi.triangularView<Eigen::Lower>().setZero();
+    chi2.triangularView<Eigen::Lower>().setZero();
 
     #pragma omp parallel for schedule(dynamic,1)
     for (int i = 0; i < F; ++i) {
@@ -829,8 +829,8 @@ std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_nb(
             const Eigen::VectorXi f2 = samples.col(j);
 
             auto result = mutual_information_nb(
-                means(i), alphas(i),
-                means(j), alphas(j),
+                means(i), concs(i),
+                means(j), concs(j),
                 f1, f2, exposure, min_pop
             );
             mi(i, j)   = result.first;

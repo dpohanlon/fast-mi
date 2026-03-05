@@ -35,6 +35,7 @@ struct KDNode {
     bool is_leaf;
     int split_dim;  // 0 for x, 1 for y
     T split_val;
+    int leaf_id = -1;
 
     std::unique_ptr<KDNode> left;
     std::unique_ptr<KDNode> right;
@@ -155,6 +156,9 @@ class KDTree {
 
     void dumpSplittingValuesToCSV(const std::string &filename) const;
 
+    template<class InputIt>
+    std::pair<double, int> chi2_holdout(InputIt first, InputIt last, int n_test, double min_expected = 5.0) const;
+
    private:
     std::unique_ptr<KDNode<T>> root;
     int min_points;
@@ -234,6 +238,54 @@ class KDTree {
         }
         result.emplace_back(current, count);
         return result;
+    }
+
+    mutable bool leaf_cache_ready = false;
+    mutable std::vector<const KDNode<T>*> leaf_nodes;
+    mutable std::vector<double> leaf_prob;
+
+    void build_leaf_cache() const {
+        leaf_nodes.clear();
+        leaf_prob.clear();
+
+        std::vector<const KDNode<T>*> stack;
+        stack.push_back(root.get());
+
+        while (!stack.empty()) {
+            const KDNode<T>* node = stack.back();
+            stack.pop_back();
+            if (!node) continue;
+
+            if (node->is_leaf) {
+                const int id = static_cast<int>(leaf_nodes.size());
+                const_cast<KDNode<T>*>(node)->leaf_id = id;
+                leaf_nodes.push_back(node);
+                leaf_prob.push_back(get_bin_area(*node));
+            } else {
+                stack.push_back(node->right.get());
+                stack.push_back(node->left.get());
+            }
+        }
+
+        double Z = 0.0;
+        for (double a : leaf_prob) Z += a;
+        if (Z <= 0.0) {
+            for (auto& p : leaf_prob) p = 0.0;
+            leaf_cache_ready = true;
+            return;
+        }
+        for (auto& p : leaf_prob) p /= Z;
+
+        leaf_cache_ready = true;
+    }
+
+    int locate_leaf_id(const Point<T>& p) const {
+        const KDNode<T>* node = root.get();
+        while (node && !node->is_leaf) {
+            const T coord = (node->split_dim == 0) ? p.x : p.y;
+            node = (coord < node->split_val) ? node->left.get() : node->right.get();
+        }
+        return node ? node->leaf_id : -1;
     }
 
     // Replace your count_duplicates_unordered with this:
@@ -938,4 +990,51 @@ void KDTree<T>::dumpSplittingValuesHelper(const KDNode<T>* node, std::ofstream &
     // Recursively dump left and right subtrees.
     dumpSplittingValuesHelper(node->left.get(), out, depth + 1);
     dumpSplittingValuesHelper(node->right.get(), out, depth + 1);
+}
+
+template <typename T>
+template <class InputIt>
+std::pair<double, int> KDTree<T>::chi2_holdout(InputIt first, InputIt last, int n_test, double min_expected) const {
+    if (!leaf_cache_ready) build_leaf_cache();
+    const int L = static_cast<int>(leaf_nodes.size());
+    if (L <= 1 || n_test <= 0) return {0.0, 0};
+
+    std::vector<int> obs(L, 0);
+
+    for (auto it = first; it != last; ++it) {
+        const Point<T> p = *it;
+        const int id = locate_leaf_id(p);
+        if (id >= 0) obs[id] += 1;
+    }
+
+    double chi2 = 0.0;
+
+    long long O_small = 0;
+    double E_small = 0.0;
+    int bins_kept = 0;
+
+    for (int l = 0; l < L; ++l) {
+        const double E = static_cast<double>(n_test) * leaf_prob[l];
+        const double O = static_cast<double>(obs[l]);
+
+        if (!(E > 0.0)) continue;
+
+        if (E < min_expected) {
+            O_small += obs[l];
+            E_small += E;
+        } else {
+            const double d = O - E;
+            chi2 += d * d / E;
+            bins_kept += 1;
+        }
+    }
+
+    if (E_small > 0.0) {
+        const double d = static_cast<double>(O_small) - E_small;
+        chi2 += d * d / E_small;
+        bins_kept += 1;
+    }
+
+    const int df = (bins_kept > 0) ? (bins_kept - 1) : 0;
+    return {chi2, df};
 }

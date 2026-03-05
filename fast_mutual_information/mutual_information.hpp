@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <Eigen/Sparse>
 #include <cstdint>
+#include <random>
 
 #include "copula.hpp"
 #include "fast_negative_binomial/fast_nb.hpp"
@@ -25,6 +26,83 @@ void init_parallel()
 
     Eigen::initParallel();
     Eigen::setNbThreads(1);
+}
+
+inline void make_twofold_split_indices(int n, uint64_t seed, Eigen::VectorXi& idxA, Eigen::VectorXi& idxB) {
+    Eigen::VectorXi perm(n);
+    for (int i = 0; i < n; ++i) perm(i) = i;
+
+    std::mt19937_64 rng(seed);
+    std::shuffle(perm.data(), perm.data() + n, rng);
+
+    const int nA = n / 2;
+    idxA = perm.head(nA);
+    idxB = perm.tail(n - nA);
+}
+
+template<typename Vec>
+struct IndexedPointIter {
+    using Scalar = typename Vec::Scalar;
+    using iterator_category = std::random_access_iterator_tag;
+    using value_type = Point<Scalar>;
+    using difference_type = std::ptrdiff_t;
+    using reference = value_type;
+
+    const Vec* x = nullptr;
+    const Vec* y = nullptr;
+    const int* idx = nullptr;
+    int pos = 0;
+
+    value_type operator*() const {
+        const int i = idx[pos];
+        return value_type{(*x)(i), (*y)(i)};
+    }
+
+    IndexedPointIter& operator++() { ++pos; return *this; }
+    IndexedPointIter& operator--() { --pos; return *this; }
+
+    IndexedPointIter operator+(difference_type d) const { return {x, y, idx, pos + static_cast<int>(d)}; }
+    IndexedPointIter operator-(difference_type d) const { return {x, y, idx, pos - static_cast<int>(d)}; }
+    difference_type operator-(const IndexedPointIter& o) const { return static_cast<difference_type>(pos - o.pos); }
+
+    bool operator==(const IndexedPointIter& o) const { return pos == o.pos; }
+    bool operator!=(const IndexedPointIter& o) const { return pos != o.pos; }
+    bool operator<(const IndexedPointIter& o) const { return pos < o.pos; }
+};
+
+template<typename Vec>
+struct IndexedPointRange {
+    const Vec* x = nullptr;
+    const Vec* y = nullptr;
+    const Eigen::VectorXi* idx = nullptr;
+
+    auto begin() const { return IndexedPointIter<Vec>{x, y, idx->data(), 0}; }
+    auto end() const {
+        return IndexedPointIter<Vec>{x, y, idx->data(), static_cast<int>(idx->size())};
+    }
+    int size() const { return idx->size(); }
+};
+
+template<typename Vec>
+inline std::pair<double, int> crossfit_chi2_twofold(
+    const Vec& x,
+    const Vec& y,
+    Copula<typename Vec::Scalar>* copula,
+    int min_pop,
+    const Eigen::VectorXi& idxA,
+    const Eigen::VectorXi& idxB,
+    double min_expected = 5.0
+) {
+    IndexedPointRange<Vec> A{&x, &y, &idxA};
+    IndexedPointRange<Vec> B{&x, &y, &idxB};
+
+    KDTree<typename Vec::Scalar> treeA(A.begin(), A.end(), copula, min_pop);
+    auto [chi2_ab, df_ab] = treeA.chi2_holdout(B.begin(), B.end(), B.size(), min_expected);
+
+    KDTree<typename Vec::Scalar> treeB(B.begin(), B.end(), copula, min_pop);
+    auto [chi2_ba, df_ba] = treeB.chi2_holdout(A.begin(), A.end(), A.size(), min_expected);
+
+    return {chi2_ab + chi2_ba, df_ab + df_ba};
 }
 
 template <typename T>
@@ -910,4 +988,124 @@ std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_nb_sparse(
     }
 
     return {mi, chi2};
+}
+
+std::tuple<Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd>
+mutual_information_normal_crossfit(
+    Eigen::MatrixXi& samples,
+    Eigen::VectorXd means,
+    Eigen::VectorXd std_devs,
+    int min_pop = 25,
+    uint64_t seed = 0,
+    double min_expected = 5.0
+) {
+    init_parallel();
+
+    const int N = samples.rows();
+    const int F = samples.cols();
+
+    Eigen::VectorXi idxA, idxB;
+    make_twofold_split_indices(N, seed, idxA, idxB);
+
+    Eigen::MatrixXd mi   = Eigen::MatrixXd::Zero(F, F);
+    Eigen::MatrixXd chi2 = Eigen::MatrixXd::Zero(F, F);
+    Eigen::MatrixXd df   = Eigen::MatrixXd::Zero(F, F);
+
+    #pragma omp parallel for schedule(dynamic,1)
+    for (int i = 0; i < F; i++) {
+        for (int j = i + 1; j < F; j++) {
+            PointView pv(samples.col(i), samples.col(j));
+            MutualInformation<int> mi_full(pv, min_pop);
+            mi_full.setNormalCopula(means(i), std_devs(i), means(j), std_devs(j));
+
+            const auto [mi_ij, _] = mi_full.mutual_information();
+
+            const auto [chi2_cv, df_cv] = crossfit_chi2_twofold(
+                samples.col(i),
+                samples.col(j),
+                mi_full.copula,
+                min_pop,
+                idxA,
+                idxB,
+                min_expected
+            );
+
+            mi(i, j) = mi_ij;
+            chi2(i, j) = chi2_cv;
+            df(i, j) = static_cast<double>(df_cv);
+        }
+    }
+
+    mi.triangularView<Eigen::Lower>().setZero();
+    chi2.triangularView<Eigen::Lower>().setZero();
+    df.triangularView<Eigen::Lower>().setZero();
+
+    return {mi, chi2, df};
+}
+
+std::tuple<Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd>
+mutual_information_nb_crossfit(
+    const Eigen::Ref<const Eigen::MatrixXi>& samples,
+    const Eigen::Ref<const Eigen::VectorXd>& means,
+    const Eigen::Ref<const Eigen::VectorXd>& concs,
+    int min_pop = 25,
+    std::uint64_t seed = 0,
+    double min_expected = 5.0
+) {
+    init_parallel();
+
+    const int N = samples.rows();
+    const int F = samples.cols();
+
+    Eigen::VectorXi idxA, idxB;
+    make_twofold_split_indices(N, seed, idxA, idxB);
+
+    Eigen::MatrixXd mi   = Eigen::MatrixXd::Zero(F, F);
+    Eigen::MatrixXd chi2 = Eigen::MatrixXd::Zero(F, F);
+    Eigen::MatrixXd df   = Eigen::MatrixXd::Zero(F, F);
+
+    #pragma omp parallel for schedule(dynamic,1)
+    for (int i = 0; i < F; i++) {
+        for (int j = i + 1; j < F; j++) {
+            PointView pv(samples.col(i), samples.col(j));
+
+            MutualInformation<int> mi_full(pv, min_pop);
+
+            const double mean1 = means(i);
+            const double conc1 = concs(i);
+            const double mean2 = means(j);
+            const double conc2 = concs(j);
+
+            auto cdf_x = [=](int x) -> double {
+                return (x < 0) ? 0.0 : nb2_cdf_single(x, mean1, conc1);
+            };
+            auto cdf_y = [=](int y) -> double {
+                return (y < 0) ? 0.0 : nb2_cdf_single(y, mean2, conc2);
+            };
+
+            mi_full.setCDF(cdf_x, cdf_y);
+
+            const auto [mi_ij, _chi2_internal] = mi_full.mutual_information();
+
+            const auto [chi2_cv, df_cv] = crossfit_chi2_twofold(
+                samples.col(i),
+                samples.col(j),
+                mi_full.copula,
+                min_pop,
+                idxA,
+                idxB,
+                min_expected
+            );
+
+            mi(i, j)   = mi_ij;
+            chi2(i, j) = chi2_cv;
+            df(i, j)   = static_cast<double>(df_cv);
+        }
+    }
+
+    mi.triangularView<Eigen::Lower>().setZero();
+    chi2.triangularView<Eigen::Lower>().setZero();
+    df.triangularView<Eigen::Lower>().setZero();
+
+    return {mi, chi2, df};
 }

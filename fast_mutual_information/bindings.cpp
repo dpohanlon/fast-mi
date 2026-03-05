@@ -123,6 +123,12 @@ void check_min_pop(int min_pop) {
     }
 }
 
+void check_min_expected(double min_expected) {
+    if (!std::isfinite(min_expected) || min_expected <= 0.0) {
+        throw py::value_error("min_expected must be positive and finite");
+    }
+}
+
 }  // namespace
 
 PYBIND11_MODULE(fast_mutual_information, m) {
@@ -540,4 +546,149 @@ PYBIND11_MODULE(fast_mutual_information, m) {
         "    min_pop (int): Minimum bin population.\n\n"
         "Returns:\n"
         "    np.array: Array of mutual information values.");
+
+    m.def(
+        "mi_normal_crossfit",
+        [](Eigen::MatrixXi& data,
+           py::EigenDRef<const Eigen::VectorXd> means,
+           py::EigenDRef<const Eigen::VectorXd> std_devs,
+           int min_pop,
+           std::uint64_t seed,
+           double min_expected)
+           -> std::tuple<Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd> {
+            check_matrix_shape(data, "data");
+            check_vector_size(means, "means");
+            check_vector_size(std_devs, "std_devs");
+            if (data.cols() < 2) {
+                throw py::value_error("data must contain at least two columns");
+            }
+            if (data.cols() != means.size() || data.cols() != std_devs.size()) {
+                throw py::value_error("data columns must match length of means and std_devs");
+            }
+            check_non_negative(data, "data");
+            check_all_finite(means, "means");
+            check_all_finite(std_devs, "std_devs");
+            check_positive(std_devs, "std_devs");
+            check_min_pop(min_pop);
+            check_min_expected(min_expected);
+
+            return safe_execute([&] {
+                py::gil_scoped_release nogil;
+                return mutual_information_normal_crossfit(
+                    data, means, std_devs, min_pop, seed, min_expected
+                );
+            });
+        },
+        py::arg("data"),
+        py::arg("means").noconvert(),
+        py::arg("std_devs").noconvert(),
+        py::arg("min_pop") = 25,
+        py::arg("seed") = 0,
+        py::arg("min_expected") = 5.0,
+        "Cross-fit (2-fold) Pearson chi-square for the copula-independence null.\n\n"
+        "This builds the KD-tree partition on fold A and evaluates chi-square on fold B,\n"
+        "then swaps folds and sums the two chi-square values. The dof returned is the\n"
+        "sum of fold-specific effective bin counts minus constraints (after merging bins\n"
+        "with expected count < min_expected).\n\n"
+        "Parameters:\n"
+        "    data (np.array[int]): shape (Nsamples, Nfeatures)\n"
+        "    means (np.array[float]): per-feature normal means\n"
+        "    std_devs (np.array[float]): per-feature normal std devs\n"
+        "    min_pop (int): minimum training-bin population during kd-tree construction\n"
+        "    seed (int): RNG seed controlling the fold split\n"
+        "    min_expected (float): minimum expected count per test bin (bins below are merged)\n\n"
+        "Returns:\n"
+        "    (mi, chi2_cv, dof_cv): each is (Nfeatures, Nfeatures) upper-triangular.\n"
+    );
+
+    m.def(
+        "mi_normal_crossfit",
+        [](MatrixXl& data,
+           py::EigenDRef<const Eigen::VectorXd> means,
+           py::EigenDRef<const Eigen::VectorXd> std_devs,
+           int min_pop,
+           std::uint64_t seed,
+           double min_expected)
+           -> std::tuple<Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd> {
+            Eigen::MatrixXi data_i = data.cast<int>().eval();
+            check_matrix_shape(data_i, "data");
+            check_vector_size(means, "means");
+            check_vector_size(std_devs, "std_devs");
+            if (data_i.cols() < 2) {
+                throw py::value_error("data must contain at least two columns");
+            }
+            if (data_i.cols() != means.size() || data_i.cols() != std_devs.size()) {
+                throw py::value_error("data columns must match length of means and std_devs");
+            }
+            check_non_negative(data_i, "data");
+            check_all_finite(means, "means");
+            check_all_finite(std_devs, "std_devs");
+            check_positive(std_devs, "std_devs");
+            check_min_pop(min_pop);
+            check_min_expected(min_expected);
+
+            return safe_execute([&] {
+                py::gil_scoped_release nogil;
+                return mutual_information_normal_crossfit(
+                    data_i, means, std_devs, min_pop, seed, min_expected
+                );
+            });
+        },
+        py::arg("data"),
+        py::arg("means").noconvert(),
+        py::arg("std_devs").noconvert(),
+        py::arg("min_pop") = 25,
+        py::arg("seed") = 0,
+        py::arg("min_expected") = 5.0,
+        "Same as mi_normal_crossfit, but accepts a long-int matrix and casts internally."
+    );
+
+    m.def(
+        "mi_negative_binomial_crossfit",
+        [](py::EigenDRef<const Eigen::MatrixXi> data,
+           py::EigenDRef<const Eigen::VectorXd> means,
+           py::EigenDRef<const Eigen::VectorXd> concentrations,
+           int min_pop,
+           std::uint64_t seed,
+           double min_expected)
+           -> std::tuple<Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd> {
+
+            check_matrix_shape(data, "data");
+            check_vector_size(means, "means");
+            check_vector_size(concentrations, "concentrations");
+
+            if (data.cols() < 2) {
+                throw py::value_error("data must contain at least two columns");
+            }
+            if (data.cols() != means.size() || data.cols() != concentrations.size()) {
+                throw py::value_error("data columns must match length of means and concentrations");
+            }
+
+            check_non_negative(data, "data");
+            check_all_finite(means, "means");
+            check_all_finite(concentrations, "concentrations");
+            check_positive(means, "means");
+            check_positive(concentrations, "concentrations");
+
+            check_min_pop(min_pop);
+            check_min_expected(min_expected);
+
+            return safe_execute([&] {
+                py::gil_scoped_release nogil;
+                return mutual_information_nb_crossfit(
+                    data, means, concentrations, min_pop, seed, min_expected
+                );
+            });
+        },
+        py::arg("data").noconvert(),
+        py::arg("means").noconvert(),
+        py::arg("concentrations").noconvert(),
+        py::arg("min_pop") = 25,
+        py::arg("seed") = 0,
+        py::arg("min_expected") = 5.0,
+        "Cross-fit (2-fold) Pearson chi-square for NB copula-independence null.\n\n"
+        "Returns (mi, chi2_cv, dof_cv), each (F,F) upper-triangular.\n"
+        "chi2_cv and dof_cv are computed by building the KD-tree on fold A and\n"
+        "evaluating chi-square on fold B (with expected-count bin merging), then swapping.\n"
+    );
 }

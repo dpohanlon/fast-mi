@@ -173,20 +173,20 @@ class KDTree {
     void dumpSplittingValuesHelper(const KDNode<T>* node, std::ofstream &out, int depth) const;
 
     double compute_root_area_u() const {
-        // if (mode_ == MiMode::Raw) return 1.0;
-        // if constexpr (std::is_integral<T>::value) {
-        //     const auto& b = root->bounds;
-        //     const double x_lo = (b.min_x > std::numeric_limits<int>::min())
-        //                             ? copula->cdf_x(b.min_x - 1) : 0.0;
-        //     const double x_hi = copula->cdf_x(b.max_x);
-        //     const double y_lo = (b.min_y > std::numeric_limits<int>::min())
-        //                             ? copula->cdf_y(b.min_y - 1) : 0.0;
-        //     const double y_hi = copula->cdf_y(b.max_y);
-        //     return std::max(1e-15, (x_hi - x_lo) * (y_hi - y_lo));
-        // } else {
-        //     return 1.0;
-        // }
-        return 1.0;
+        if (mode_ == MiMode::Raw) return 1.0;
+        if constexpr (std::is_integral<T>::value) {
+            const auto& b = root->bounds;
+            const double x_lo = (b.min_x > std::numeric_limits<int>::min())
+                                    ? copula->cdf_x(b.min_x - 1) : 0.0;
+            const double x_hi = copula->cdf_x(b.max_x);
+            const double y_lo = (b.min_y > std::numeric_limits<int>::min())
+                                    ? copula->cdf_y(b.min_y - 1) : 0.0;
+            const double y_hi = copula->cdf_y(b.max_y);
+            return std::max(1e-15, (x_hi - x_lo) * (y_hi - y_lo));
+        } else {
+            return 1.0;
+        }
+        // return 1.0;
     }
 
     // For ints this can be optimised by sorting!
@@ -408,7 +408,8 @@ class KDTree {
 
     bool is_degenerate_bounds(const Bounds<T>& bounds) const {
         if constexpr (std::is_integral<T>::value) {
-            return (bounds.min_x >= bounds.max_x) || (bounds.min_y >= bounds.max_y);
+            // Bounds are inclusive for ints; degenerate only if min > max.
+            return (bounds.min_x > bounds.max_x) || (bounds.min_y > bounds.max_y);
         } else {
             return (bounds.max_x - bounds.min_x < 1e-8) || (bounds.max_y - bounds.min_y < 1e-8);
         }
@@ -542,41 +543,86 @@ class KDTree {
             }
 
             const bool degenerate = is_degenerate_bounds(bounds);
+            const size_t uniq = e - b;
             const long long mass = range_mass(b, e);
 
-            if (degenerate || mass <= (long long)min_points) {
-                make_leaf(node, b, e);
-                continue;
+            if constexpr (std::is_integral<T>::value) {
+                // For discrete counts, control resolution by number of unique atoms.
+                if (degenerate || uniq <= static_cast<size_t>(min_points)) {
+                    make_leaf(node, b, e);
+                    continue;
+                }
+            } else {
+                // For continuous, keep the original mass-based stopping.
+                if (degenerate || mass <= static_cast<long long>(min_points)) {
+                    make_leaf(node, b, e);
+                    continue;
+                }
             }
 
-            const int axis = depth % 2;
+            // Choose axis by larger current bounds span; tie-break by depth parity.
+            int axis = 0;
+            const auto span_x = bounds.max_x - bounds.min_x;
+            const auto span_y = bounds.max_y - bounds.min_y;
+
+            if (span_y > span_x) axis = 1;
+            else if (span_y == span_x) axis = (depth % 2);
+
             node->split_dim = axis;
 
-            // Work in sorted coordinate order for stable integer cuts.
-            sort_range_by_axis(b, e, axis);
+            // Helper: prepare sorting/min/max for a candidate axis; if axis is constant, return false.
+            // If it succeeds, it leaves [b,e) sorted by that axis and updates node->split_dim.
+            T min_c, max_c;
+            auto prepare_axis = [&](int ax) -> bool {
+                sort_range_by_axis(b, e, ax);
+                min_c = first_coord(b, ax);
+                max_c = last_coord(e, ax);
+                if (min_c == max_c) return false;
+                axis = ax;
+                node->split_dim = ax;
+                return true;
+            };
 
-            const T min_c = first_coord(b, axis);
-            const T max_c = last_coord(e, axis);
-
-            if (min_c == max_c) {
-                make_leaf(node, b, e);
-                continue;
+            // If preferred axis is constant, try the other axis before giving up.
+            if (!prepare_axis(axis)) {
+                const int other = 1 - axis;
+                if (!prepare_axis(other)) {
+                    make_leaf(node, b, e);
+                    continue;
+                }
             }
 
+            // Choose cut on the (now prepared) axis.
             const T cut = choose_integer_cut_weighted(b, e, axis, mass);
             node->split_val = cut;
 
             const size_t mid = lower_bound_coord(b, e, axis, cut);
-
             if (mid == b || mid == e) {
-                // If this happens, either the data are effectively constant on this axis
-                // or numeric/pathological; safest is to stop.
                 make_leaf(node, b, e);
                 continue;
             }
 
-            Bounds<T> L, R;
-            carve_child_bounds(bounds, axis, cut, L, R);
+            // Tighten bounds to the actually occupied support in each child.
+            // This reduces empty “holes” inside rectangles (important for spike-dominated data).
+            auto tight_bounds_range = [&](size_t bb, size_t ee) -> Bounds<T> {
+                Bounds<T> B;
+                B.min_x = std::numeric_limits<T>::max();
+                B.max_x = std::numeric_limits<T>::lowest();
+                B.min_y = std::numeric_limits<T>::max();
+                B.max_y = std::numeric_limits<T>::lowest();
+
+                for (size_t i = bb; i < ee; ++i) {
+                    const auto& pt = points_storage[i].first;
+                    if (pt.x < B.min_x) B.min_x = pt.x;
+                    if (pt.x > B.max_x) B.max_x = pt.x;
+                    if (pt.y < B.min_y) B.min_y = pt.y;
+                    if (pt.y > B.max_y) B.max_y = pt.y;
+                }
+                return B;
+            };
+
+            Bounds<T> L = tight_bounds_range(b,   mid);
+            Bounds<T> R = tight_bounds_range(mid, e);
 
             node->left  = std::make_unique<KDNode<T>>();
             node->left->bounds    = L;
@@ -616,28 +662,39 @@ class KDTree {
             const int bin_count = node->total_counts();
             if (bin_count == 0) return;
 
-            const double bin_area = this->get_bin_area(*node);
-
-            double log_p_xy;
-            double expected_count;
+            const double p = static_cast<double>(bin_count) / static_cast<double>(total_count);
 
             if (mode_ == MiMode::Raw) {
-                log_p_xy = std::log(bin_count) - std::log(total_count);
-                expected_count = static_cast<double>(total_count) * bin_area;
+                const double log_p = std::log(bin_count) - std::log(total_count);
+                mi += p * log_p;
+                return;
+            }
+
+            // Copula mode:
+            // For continuous T this is area in (u,v). For int T, rectangle-area can hugely
+            // overcount when the leaf contains holes, so use sum_{atoms in leaf} pX(x)*pY(y).
+            double q = 0.0;
+
+            if constexpr (std::is_integral<T>::value) {
+                // node->points holds unique atoms (x,y) with multiplicity in .second
+                for (const auto& pr : node->points) {
+                    const int x = pr.first.x;
+                    const int y = pr.first.y;
+
+                    const double px = copula->cdf_x(x) - copula->cdf_x(x - 1);
+                    const double py = copula->cdf_y(y) - copula->cdf_y(y - 1);
+
+                    q += px * py;
+                }
             } else {
-                log_p_xy = std::log(bin_count) - std::log(total_count)
-                         - std::log(bin_area + 1e-12)
-                         + std::log(root_area_u);
-                expected_count = static_cast<double>(total_count) * (bin_area / root_area_u);
+                q = this->get_bin_area(*node);
             }
 
-            mi += (static_cast<double>(bin_count) / total_count) * log_p_xy;
-            area += bin_area;
+            const double tiny = 1e-300;
+            q = std::max(q, tiny);
 
-            if (expected_count > 0.0) {
-                const double diff = static_cast<double>(bin_count) - expected_count;
-                chi2 += diff * diff / expected_count;
-            }
+            // MI contribution for this leaf:
+            mi += p * (std::log(p) - std::log(q));
             return;
         }
 

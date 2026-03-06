@@ -1109,3 +1109,74 @@ mutual_information_nb_crossfit(
 
     return {mi, chi2, df};
 }
+
+std::tuple<Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd>
+mutual_information_zinb_crossfit(
+    const Eigen::Ref<const Eigen::MatrixXi>& samples,
+    const Eigen::Ref<const Eigen::VectorXd>& means,
+    const Eigen::Ref<const Eigen::VectorXd>& concs,
+    const Eigen::Ref<const Eigen::VectorXd>& alphas,
+    int min_pop = 25,
+    std::uint64_t seed = 0,
+    double min_expected = 5.0
+) {
+    init_parallel();
+
+    const int N = samples.rows();
+    const int F = samples.cols();
+
+    Eigen::VectorXi idxA, idxB;
+    make_twofold_split_indices(N, seed, idxA, idxB);
+
+    Eigen::MatrixXd mi   = Eigen::MatrixXd::Zero(F, F);
+    Eigen::MatrixXd chi2 = Eigen::MatrixXd::Zero(F, F);
+    Eigen::MatrixXd df   = Eigen::MatrixXd::Zero(F, F);
+
+    #pragma omp parallel for schedule(dynamic,1)
+    for (int i = 0; i < F; i++) {
+        for (int j = i + 1; j < F; j++) {
+            PointView pv(samples.col(i), samples.col(j));
+
+            MutualInformation<int> mi_full(pv, min_pop, /*zi=*/true);
+
+            const double mean1 = means(i);
+            const double conc1 = concs(i);
+            const double alpha1 = alphas(i);
+
+            const double mean2 = means(j);
+            const double conc2 = concs(j);
+            const double alpha2 = alphas(j);
+
+            auto cdf_x = [=](int x) -> double {
+                return (x < 0) ? 0.0 : zinb2_cdf_single(x, mean1, conc1, alpha1);
+            };
+            auto cdf_y = [=](int y) -> double {
+                return (y < 0) ? 0.0 : zinb2_cdf_single(y, mean2, conc2, alpha2);
+            };
+
+            mi_full.setCDF(cdf_x, cdf_y);
+
+            const auto [mi_ij, _chi2_internal] = mi_full.mutual_information();
+
+            const auto [chi2_cv, df_cv] = crossfit_chi2_twofold(
+                samples.col(i),
+                samples.col(j),
+                mi_full.copula,
+                min_pop,
+                idxA,
+                idxB,
+                min_expected
+            );
+
+            mi(i, j)   = mi_ij;
+            chi2(i, j) = chi2_cv;
+            df(i, j)   = static_cast<double>(df_cv);
+        }
+    }
+
+    mi.triangularView<Eigen::Lower>().setZero();
+    chi2.triangularView<Eigen::Lower>().setZero();
+    df.triangularView<Eigen::Lower>().setZero();
+
+    return {mi, chi2, df};
+}

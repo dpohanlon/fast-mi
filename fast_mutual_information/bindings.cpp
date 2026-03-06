@@ -691,4 +691,60 @@ PYBIND11_MODULE(fast_mutual_information, m) {
         "chi2_cv and dof_cv are computed by building the KD-tree on fold A and\n"
         "evaluating chi-square on fold B (with expected-count bin merging), then swapping.\n"
     );
+
+    m.def(
+        "mi_zero_inflated_negative_binomial_crossfit",
+        [](py::EigenDRef<const Eigen::MatrixXi> data,
+           py::EigenDRef<const Eigen::VectorXd> means,
+           py::EigenDRef<const Eigen::VectorXd> concentrations,
+           py::EigenDRef<const Eigen::VectorXd> alphas,
+           int min_pop,
+           std::uint64_t seed,
+           double min_expected)
+           -> std::tuple<Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd> {
+
+            check_matrix_shape(data, "data");
+            check_vector_size(means, "means");
+            check_vector_size(concentrations, "concentrations");
+            check_vector_size(alphas, "alphas");
+
+            if (data.cols() < 2) {
+                throw py::value_error("data must contain at least two columns");
+            }
+            if (data.cols() != means.size() ||
+                data.cols() != concentrations.size() ||
+                data.cols() != alphas.size()) {
+                throw py::value_error(
+                    "data columns must match length of means, concentrations, and alphas");
+            }
+
+            check_non_negative(data, "data");
+            check_all_finite(means, "means");
+            check_all_finite(concentrations, "concentrations");
+            check_all_finite(alphas, "alphas");
+            check_positive(means, "means");
+            check_positive(concentrations, "concentrations");
+            check_probabilities(alphas, "alphas");
+            check_min_pop(min_pop);
+            check_min_expected(min_expected);
+
+            return safe_execute([&] {
+                py::gil_scoped_release nogil;
+                return mutual_information_zinb_crossfit(
+                    data, means, concentrations, alphas, min_pop, seed, min_expected
+                );
+            });
+        },
+        py::arg("data").noconvert(),
+        py::arg("means").noconvert(),
+        py::arg("concentrations").noconvert(),
+        py::arg("alphas").noconvert(),
+        py::arg("min_pop") = 25,
+        py::arg("seed") = 0,
+        py::arg("min_expected") = 5.0,
+        "Cross-fit (2-fold) Pearson chi-square for ZINB copula-independence null.\n\n"
+        "Returns (mi, chi2_cv, dof_cv), each (F,F) upper-triangular.\n"
+        "chi2_cv and dof_cv are computed by building the KD-tree on fold A and\n"
+        "evaluating chi-square on fold B (with expected-count bin merging), then swapping."
+    );
 }

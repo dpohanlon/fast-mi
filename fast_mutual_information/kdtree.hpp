@@ -165,6 +165,8 @@ class KDTree {
     int total_count;
     bool zi;
 
+    mutable double leaf_mass_total = 0.0;
+
     std::vector<std::pair<Point<T>,int>> points_storage;
 
     Copula<T>* copula;
@@ -247,6 +249,7 @@ class KDTree {
     void build_leaf_cache() const {
         leaf_nodes.clear();
         leaf_prob.clear();
+        leaf_mass_total = 0.0;
 
         std::vector<const KDNode<T>*> stack;
         stack.push_back(root.get());
@@ -260,22 +263,17 @@ class KDTree {
                 const int id = static_cast<int>(leaf_nodes.size());
                 const_cast<KDNode<T>*>(node)->leaf_id = id;
                 leaf_nodes.push_back(node);
-                leaf_prob.push_back(leaf_rect_null_mass(*node));
+
+                const double q = leaf_rect_null_mass(*node);
+                leaf_prob.push_back(q);
+                leaf_mass_total += q;
             } else {
                 stack.push_back(node->right.get());
                 stack.push_back(node->left.get());
             }
         }
 
-        double Z = 0.0;
-        for (double a : leaf_prob) Z += a;
-        if (Z <= 0.0) {
-            for (auto& p : leaf_prob) p = 0.0;
-            leaf_cache_ready = true;
-            return;
-        }
-        for (auto& p : leaf_prob) p /= Z;
-
+        leaf_mass_total = std::min(1.0, std::max(0.0, leaf_mass_total));
         leaf_cache_ready = true;
     }
 
@@ -460,7 +458,7 @@ class KDTree {
 
     bool is_degenerate_bounds(const Bounds<T>& bounds) const {
         if constexpr (std::is_integral<T>::value) {
-            return (bounds.min_x >= bounds.max_x) || (bounds.min_y >= bounds.max_y);
+            return (bounds.min_x > bounds.max_x) || (bounds.min_y > bounds.max_y);
         } else {
             return (bounds.max_x - bounds.min_x < 1e-8) || (bounds.max_y - bounds.min_y < 1e-8);
         }
@@ -601,18 +599,27 @@ class KDTree {
                 continue;
             }
 
-            const int axis = depth % 2;
+            int axis = depth % 2;
             node->split_dim = axis;
 
-            // Work in sorted coordinate order for stable integer cuts.
-            sort_range_by_axis(b, e, axis);
+            T min_c{}, max_c{};
 
-            const T min_c = first_coord(b, axis);
-            const T max_c = last_coord(e, axis);
+            auto prepare_axis = [&](int ax) -> bool {
+                sort_range_by_axis(b, e, ax);
+                min_c = first_coord(b, ax);
+                max_c = last_coord(e, ax);
+                if (min_c == max_c) return false;
+                axis = ax;
+                node->split_dim = ax;
+                return true;
+            };
 
-            if (min_c == max_c) {
-                make_leaf(node, b, e);
-                continue;
+            if (!prepare_axis(axis)) {
+                const int other = 1 - axis;
+                if (!prepare_axis(other)) {
+                    make_leaf(node, b, e);
+                    continue;
+                }
             }
 
             const T cut = choose_integer_cut_weighted(b, e, axis, mass);
@@ -621,8 +628,6 @@ class KDTree {
             const size_t mid = lower_bound_coord(b, e, axis, cut);
 
             if (mid == b || mid == e) {
-                // If this happens, either the data are effectively constant on this axis
-                // or numeric/pathological; safest is to stop.
                 make_leaf(node, b, e);
                 continue;
             }
@@ -741,6 +746,17 @@ class KDTree {
 
         traverse_and_compute(node->left.get(),  root_area_u, mi, area, chi2);
         traverse_and_compute(node->right.get(), root_area_u, mi, area, chi2);
+    }
+
+    bool point_in_root_bounds(const Point<T>& p) const {
+        const auto& b = root->bounds;
+        if constexpr (std::is_integral<T>::value) {
+            return (p.x >= b.min_x && p.x <= b.max_x &&
+                    p.y >= b.min_y && p.y <= b.max_y);
+        } else {
+            return (p.x >= b.min_x && p.x <= b.max_x &&
+                    p.y >= b.min_y && p.y <= b.max_y);
+        }
     }
 };
 
@@ -1040,21 +1056,30 @@ void KDTree<T>::dumpSplittingValuesHelper(const KDNode<T>* node, std::ofstream &
 
 template <typename T>
 template <class InputIt>
-std::pair<double, int> KDTree<T>::chi2_holdout(InputIt first, InputIt last, int n_test, double min_expected) const {
+std::pair<double, int> KDTree<T>::chi2_holdout(
+    InputIt first, InputIt last, int n_test, double min_expected
+) const {
     if (!leaf_cache_ready) build_leaf_cache();
+
     const int L = static_cast<int>(leaf_nodes.size());
-    if (L <= 1 || n_test <= 0) return {0.0, 0};
+    if (L <= 0 || n_test <= 0) return {0.0, 0};
 
     std::vector<int> obs(L, 0);
+    int obs_oob = 0;
 
     for (auto it = first; it != last; ++it) {
         const Point<T> p = *it;
+
+        if (!point_in_root_bounds(p)) {
+            obs_oob += 1;
+            continue;
+        }
+
         const int id = locate_leaf_id(p);
         if (id >= 0) obs[id] += 1;
     }
 
     double chi2 = 0.0;
-
     long long O_small = 0;
     double E_small = 0.0;
     int bins_kept = 0;
@@ -1075,11 +1100,35 @@ std::pair<double, int> KDTree<T>::chi2_holdout(InputIt first, InputIt last, int 
         }
     }
 
+    const double q_oob = std::max(0.0, 1.0 - leaf_mass_total);
+    const double E_oob = static_cast<double>(n_test) * q_oob;
+    const double O_oob = static_cast<double>(obs_oob);
+
+    if (E_oob > 0.0) {
+        if (E_oob < min_expected) {
+            O_small += obs_oob;
+            E_small += E_oob;
+        } else {
+            const double d = O_oob - E_oob;
+            chi2 += d * d / E_oob;
+            bins_kept += 1;
+        }
+    }
+
     if (E_small > 0.0) {
         const double d = static_cast<double>(O_small) - E_small;
         chi2 += d * d / E_small;
         bins_kept += 1;
     }
+
+    std::cerr << "L=" << L
+              << " bins_kept=" << bins_kept
+              << " leaf_mass_total=" << leaf_mass_total
+              << " obs_oob=" << obs_oob
+              << " E_oob=" << E_oob
+              << " chi2=" << chi2
+              << " df=" << ((bins_kept > 0) ? (bins_kept - 1) : 0)
+              << std::endl;
 
     const int df = (bins_kept > 0) ? (bins_kept - 1) : 0;
     return {chi2, df};

@@ -102,6 +102,9 @@ inline std::pair<double, int> crossfit_chi2_twofold(
     KDTree<typename Vec::Scalar> treeB(B.begin(), B.end(), copula, min_pop);
     auto [chi2_ba, df_ba] = treeB.chi2_holdout(A.begin(), A.end(), A.size(), min_expected);
 
+    // std::cout << chi2_ab << " " <<  chi2_ba << std::endl;
+    // std::cout << df_ab << " " <<  df_ba << std::endl;
+
     return {chi2_ab + chi2_ba, df_ab + df_ba};
 }
 
@@ -742,7 +745,7 @@ int min_pop = 25) {
     mi.triangularView<Eigen::Lower>().setZero();
     chi2.triangularView<Eigen::Lower>().setZero();
 
-    std::cout << "Calculating mutual information for negative binomial distribution..." << std::endl;
+    // std::cout << "Calculating mutual information for negative binomial distribution..." << std::endl;
 
 #pragma omp parallel for schedule(dynamic,1)
     for (int i = 0; i < samples.cols(); i++) {

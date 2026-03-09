@@ -260,7 +260,7 @@ class KDTree {
                 const int id = static_cast<int>(leaf_nodes.size());
                 const_cast<KDNode<T>*>(node)->leaf_id = id;
                 leaf_nodes.push_back(node);
-                leaf_prob.push_back(get_bin_area(*node));
+                leaf_prob.push_back(leaf_rect_null_mass(*node));
             } else {
                 stack.push_back(node->right.get());
                 stack.push_back(node->left.get());
@@ -647,6 +647,57 @@ class KDTree {
         return root;
     }
 
+    // double leaf_null_mass(const KDNode<T>& node) const {
+    //     if constexpr (std::is_integral<T>::value) {
+    //         double q = 0.0;
+
+    //         for (const auto& pr : node.points) {
+    //             const int x = pr.first.x;
+    //             const int y = pr.first.y;
+
+    //             const double px = copula->cdf_x(x) - copula->cdf_x(x - 1);
+    //             const double py = copula->cdf_y(y) - copula->cdf_y(y - 1);
+
+    //             q += px * py;
+    //         }
+
+    //         return std::max(q, 1e-300);
+    //     } else {
+    //         const double root_area_u = compute_root_area_u();
+    //         const double a = get_bin_area(node);
+    //         return std::max(a / root_area_u, 1e-300);
+    //     }
+    // }
+
+    double leaf_rect_null_mass(const KDNode<T>& node) const {
+        if constexpr (std::is_integral<T>::value) {
+            const int lo_x = node.bounds.min_x - 1;
+            const int lo_y = node.bounds.min_y - 1;
+
+            double x_min = copula->cdf_x(lo_x);
+            double y_min = copula->cdf_y(lo_y);
+
+            double x_max = copula->cdf_x(node.bounds.max_x);
+            double y_max = copula->cdf_y(node.bounds.max_y);
+
+            auto clamp01 = [](double u) {
+                if (u < 0.0) return 0.0;
+                if (u > 1.0) return 1.0;
+                return u;
+            };
+
+            x_min = clamp01(x_min);
+            y_min = clamp01(y_min);
+            x_max = clamp01(x_max);
+            y_max = clamp01(y_max);
+
+            return std::max((x_max - x_min) * (y_max - y_min), 1e-300);
+        } else {
+            const double root_area_u = compute_root_area_u();
+            return std::max(get_bin_area(node) / root_area_u, 1e-300);
+        }
+    }
+
     // Can I make the underlying storage here an eigen vector, and then just
     // push it through the NB calculation? Or maybe even populate it with points
     // and the corresponding NB beforehand? -> Take the two Eigen vectors,
@@ -668,28 +719,23 @@ class KDTree {
             const int bin_count = node->total_counts();
             if (bin_count == 0) return;
 
-            const double bin_area = this->get_bin_area(*node);
-
-            double log_p_xy;
-            double expected_count;
+            const double p = static_cast<double>(bin_count) / static_cast<double>(total_count);
 
             if (mode_ == MiMode::Raw) {
-                log_p_xy = std::log(bin_count) - std::log(total_count);
-                expected_count = static_cast<double>(total_count) * bin_area;
-            } else {
-                log_p_xy = std::log(bin_count) - std::log(total_count)
-                         - std::log(bin_area + 1e-12)
-                         + std::log(root_area_u);
-                expected_count = static_cast<double>(total_count) * (bin_area / root_area_u);
+                const double log_p = std::log(p);
+                mi += p * log_p;
+                return;
             }
 
-            mi += (static_cast<double>(bin_count) / total_count) * log_p_xy;
-            area += bin_area;
+            const double q = leaf_rect_null_mass(*node);
+            mi += p * (std::log(p) - std::log(q));
 
+            const double expected_count = static_cast<double>(total_count) * q;
             if (expected_count > 0.0) {
                 const double diff = static_cast<double>(bin_count) - expected_count;
                 chi2 += diff * diff / expected_count;
             }
+
             return;
         }
 

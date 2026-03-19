@@ -650,7 +650,9 @@ PYBIND11_MODULE(fast_mutual_information, m) {
            py::EigenDRef<const Eigen::VectorXd> concentrations,
            int min_pop,
            std::uint64_t seed,
-           double min_expected)
+           double min_expected,
+           bool use_empirical_marginals,
+           double empirical_pseudocount)
            -> std::tuple<Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd> {
 
             check_matrix_shape(data, "data");
@@ -673,10 +675,21 @@ PYBIND11_MODULE(fast_mutual_information, m) {
             check_min_pop(min_pop);
             check_min_expected(min_expected);
 
+            if (!(empirical_pseudocount >= 0.0) || !std::isfinite(empirical_pseudocount)) {
+                throw py::value_error("empirical_pseudocount must be finite and >= 0");
+            }
+
             return safe_execute([&] {
                 py::gil_scoped_release nogil;
                 return mutual_information_nb_crossfit(
-                    data, means, concentrations, min_pop, seed, min_expected
+                    data,
+                    means,
+                    concentrations,
+                    min_pop,
+                    seed,
+                    min_expected,
+                    use_empirical_marginals,
+                    empirical_pseudocount
                 );
             });
         },
@@ -686,10 +699,13 @@ PYBIND11_MODULE(fast_mutual_information, m) {
         py::arg("min_pop") = 25,
         py::arg("seed") = 0,
         py::arg("min_expected") = 5.0,
-        "Cross-fit (2-fold) Pearson chi-square for NB copula-independence null.\n\n"
+        py::arg("use_empirical_marginals") = false,
+        py::arg("empirical_pseudocount") = 0.5,
+        "Cross-fit (2-fold) independence test with KD-tree partitioning.\n\n"
         "Returns (mi, chi2_cv, dof_cv), each (F,F) upper-triangular.\n"
-        "chi2_cv and dof_cv are computed by building the KD-tree on fold A and\n"
-        "evaluating chi-square on fold B (with expected-count bin merging), then swapping.\n"
+        "By default the null uses NB marginals from means/concentrations.\n"
+        "If use_empirical_marginals=True, fold-specific empirical marginals are used instead,\n"
+        "with optional empirical_pseudocount smoothing.\n"
     );
 
     m.def(

@@ -83,6 +83,131 @@ struct IndexedPointRange {
     int size() const { return idx->size(); }
 };
 
+struct EmpiricalCdf1D {
+    int min_k = 0;
+    int max_k = -1;
+    std::vector<double> F;
+
+    double operator()(int k) const {
+        if (max_k < min_k) return 0.0;
+        if (k < min_k) return 0.0;
+        if (k >= max_k) return 1.0;
+        return F[static_cast<size_t>(k - min_k)];
+    }
+};
+
+inline EmpiricalCdf1D build_empirical_cdf_lookup(
+    const Eigen::VectorXi& x,
+    double pseudocount = 0.5
+) {
+    EmpiricalCdf1D out;
+    if (x.size() == 0) return out;
+
+    const int min_k = x.minCoeff();
+    const int max_k = x.maxCoeff();
+    const int K = max_k - min_k + 1;
+
+    out.min_k = min_k;
+    out.max_k = max_k;
+    out.F.resize(static_cast<size_t>(K));
+
+    std::vector<double> hist(static_cast<size_t>(K), 0.0);
+    for (int i = 0; i < x.size(); ++i) {
+        hist[static_cast<size_t>(x(i) - min_k)] += 1.0;
+    }
+
+    const double denom =
+        static_cast<double>(x.size()) + pseudocount * static_cast<double>(K);
+
+    double sum = 0.0;
+    for (int j = 0; j < K; ++j) {
+        sum += (hist[static_cast<size_t>(j)] + pseudocount) / denom;
+        out.F[static_cast<size_t>(j)] = sum;
+    }
+
+    out.F.back() = 1.0;
+    return out;
+}
+
+inline EmpiricalCdf1D build_empirical_cdf_lookup_subset(
+    const Eigen::Ref<const Eigen::VectorXi>& x,
+    const Eigen::VectorXi& idx,
+    double pseudocount = 0.5
+) {
+    Eigen::VectorXi sub(idx.size());
+    for (int t = 0; t < idx.size(); ++t) sub(t) = x(idx(t));
+    return build_empirical_cdf_lookup(sub, pseudocount);
+}
+
+// inline std::pair<double, int> crossfit_chi2_twofold_empirical(
+//     const Eigen::Ref<const Eigen::VectorXi>& x,
+//     const Eigen::Ref<const Eigen::VectorXi>& y,
+//     int min_pop,
+//     const Eigen::VectorXi& idxA,
+//     const Eigen::VectorXi& idxB,
+//     double min_expected = 5.0,
+//     double pseudocount = 0.5
+// ) {
+//     const Eigen::VectorXi x_copy = x;
+//     const Eigen::VectorXi y_copy = y;
+
+//     IndexedPointRange<Eigen::VectorXi> A{&x_copy, &y_copy, &idxA};
+//     IndexedPointRange<Eigen::VectorXi> B{&x_copy, &y_copy, &idxB};
+
+//     const auto FxA = build_empirical_cdf_lookup_subset(x, idxA, pseudocount);
+//     const auto FyA = build_empirical_cdf_lookup_subset(y, idxA, pseudocount);
+
+//     Copula<int> copA;
+//     copA.cdf_x = [FxA](int k) -> double { return FxA(k); };
+//     copA.cdf_y = [FyA](int k) -> double { return FyA(k); };
+
+//     KDTree<int> treeA(A.begin(), A.end(), &copA, min_pop);
+//     auto [chi2_ab, df_ab] = treeA.chi2_holdout(B.begin(), B.end(), B.size(), min_expected);
+
+//     const auto FxB = build_empirical_cdf_lookup_subset(x, idxB, pseudocount);
+//     const auto FyB = build_empirical_cdf_lookup_subset(y, idxB, pseudocount);
+
+//     Copula<int> copB;
+//     copB.cdf_x = [FxB](int k) -> double { return FxB(k); };
+//     copB.cdf_y = [FyB](int k) -> double { return FyB(k); };
+
+//     KDTree<int> treeB(B.begin(), B.end(), &copB, min_pop);
+//     auto [chi2_ba, df_ba] = treeB.chi2_holdout(A.begin(), A.end(), A.size(), min_expected);
+
+//     return {chi2_ab + chi2_ba, df_ab + df_ba};
+// }
+
+inline std::pair<double, int> crossfit_chi2_twofold_empirical(
+    const Eigen::Ref<const Eigen::VectorXi>& x,
+    const Eigen::Ref<const Eigen::VectorXi>& y,
+    int min_pop,
+    const Eigen::VectorXi& idxA,
+    const Eigen::VectorXi& idxB,
+    double min_expected = 5.0,
+    double pseudocount = 0.5
+) {
+    const Eigen::VectorXi x_copy = x;
+    const Eigen::VectorXi y_copy = y;
+
+    IndexedPointRange<Eigen::VectorXi> A{&x_copy, &y_copy, &idxA};
+    IndexedPointRange<Eigen::VectorXi> B{&x_copy, &y_copy, &idxB};
+
+    const auto Fx = build_empirical_cdf_lookup(x_copy, pseudocount);
+    const auto Fy = build_empirical_cdf_lookup(y_copy, pseudocount);
+
+    Copula<int> cop;
+    cop.cdf_x = [Fx](int k) -> double { return Fx(k); };
+    cop.cdf_y = [Fy](int k) -> double { return Fy(k); };
+
+    KDTree<int> treeA(A.begin(), A.end(), &cop, min_pop);
+    auto [chi2_ab, df_ab] = treeA.chi2_holdout(B.begin(), B.end(), B.size(), min_expected);
+
+    KDTree<int> treeB(B.begin(), B.end(), &cop, min_pop);
+    auto [chi2_ba, df_ba] = treeB.chi2_holdout(A.begin(), A.end(), A.size(), min_expected);
+
+    return {chi2_ab + chi2_ba, df_ab + df_ba};
+}
+
 template<typename Vec>
 inline std::pair<double, int> crossfit_chi2_twofold(
     const Vec& x,
@@ -1053,7 +1178,9 @@ mutual_information_nb_crossfit(
     const Eigen::Ref<const Eigen::VectorXd>& concs,
     int min_pop = 25,
     std::uint64_t seed = 0,
-    double min_expected = 5.0
+    double min_expected = 5.0,
+    bool use_empirical_marginals = false,
+    double empirical_pseudocount = 0.5
 ) {
     init_parallel();
 
@@ -1071,34 +1198,57 @@ mutual_information_nb_crossfit(
     for (int i = 0; i < F; i++) {
         for (int j = i + 1; j < F; j++) {
             PointView pv(samples.col(i), samples.col(j));
-
             MutualInformation<int> mi_full(pv, min_pop);
 
-            const double mean1 = means(i);
-            const double conc1 = concs(i);
-            const double mean2 = means(j);
-            const double conc2 = concs(j);
+            double mi_ij = 0.0;
+            double chi2_cv = 0.0;
+            int df_cv = 0;
 
-            auto cdf_x = [=](int x) -> double {
-                return (x < 0) ? 0.0 : nb2_cdf_single(x, mean1, conc1);
-            };
-            auto cdf_y = [=](int y) -> double {
-                return (y < 0) ? 0.0 : nb2_cdf_single(y, mean2, conc2);
-            };
+            if (use_empirical_marginals) {
+                const auto Fx = build_empirical_cdf_lookup(samples.col(i), empirical_pseudocount);
+                const auto Fy = build_empirical_cdf_lookup(samples.col(j), empirical_pseudocount);
 
-            mi_full.setCDF(cdf_x, cdf_y);
+                auto cdf_x = [Fx](int x) -> double { return Fx(x); };
+                auto cdf_y = [Fy](int y) -> double { return Fy(y); };
 
-            const auto [mi_ij, _chi2_internal] = mi_full.mutual_information();
+                mi_full.setCDF(cdf_x, cdf_y);
+                std::tie(mi_ij, std::ignore) = mi_full.mutual_information();
 
-            const auto [chi2_cv, df_cv] = crossfit_chi2_twofold(
-                samples.col(i),
-                samples.col(j),
-                mi_full.copula,
-                min_pop,
-                idxA,
-                idxB,
-                min_expected
-            );
+                std::tie(chi2_cv, df_cv) = crossfit_chi2_twofold_empirical(
+                    samples.col(i),
+                    samples.col(j),
+                    min_pop,
+                    idxA,
+                    idxB,
+                    min_expected,
+                    empirical_pseudocount
+                );
+            } else {
+                const double mean1 = means(i);
+                const double conc1 = concs(i);
+                const double mean2 = means(j);
+                const double conc2 = concs(j);
+
+                auto cdf_x = [=](int x) -> double {
+                    return (x < 0) ? 0.0 : nb2_cdf_single(x, mean1, conc1);
+                };
+                auto cdf_y = [=](int y) -> double {
+                    return (y < 0) ? 0.0 : nb2_cdf_single(y, mean2, conc2);
+                };
+
+                mi_full.setCDF(cdf_x, cdf_y);
+                std::tie(mi_ij, std::ignore) = mi_full.mutual_information();
+
+                std::tie(chi2_cv, df_cv) = crossfit_chi2_twofold(
+                    samples.col(i),
+                    samples.col(j),
+                    mi_full.copula,
+                    min_pop,
+                    idxA,
+                    idxB,
+                    min_expected
+                );
+            }
 
             mi(i, j)   = mi_ij;
             chi2(i, j) = chi2_cv;

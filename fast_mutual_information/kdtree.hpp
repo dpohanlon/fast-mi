@@ -500,7 +500,7 @@ class KDTree {
         const T min_c = first_coord(b, axis);
         const long long target = (mass + 1) / 2;
 
-        long long cum = 0;
+        long long sum = 0;
 
         // Iterate by blocks of equal coordinate
         for (size_t i = b; i < e; ) {
@@ -514,11 +514,11 @@ class KDTree {
             }
 
             // cut = v means left is coord < v, so require v > min_c to ensure non-empty left.
-            if (cum + block_mass >= target && v > min_c) {
+            if (sum + block_mass >= target && v > min_c) {
                 return v;
             }
 
-            cum += block_mass;
+            sum += block_mass;
             i = j;
         }
 
@@ -1121,14 +1121,14 @@ std::pair<double, int> KDTree<T>::chi2_holdout(
         bins_kept += 1;
     }
 
-    std::cerr << "L=" << L
-              << " bins_kept=" << bins_kept
-              << " leaf_mass_total=" << leaf_mass_total
-              << " obs_oob=" << obs_oob
-              << " E_oob=" << E_oob
-              << " chi2=" << chi2
-              << " df=" << ((bins_kept > 0) ? (bins_kept - 1) : 0)
-              << std::endl;
+    // std::cerr << "L=" << L
+    //           << " bins_kept=" << bins_kept
+    //           << " leaf_mass_total=" << leaf_mass_total
+    //           << " obs_oob=" << obs_oob
+    //           << " E_oob=" << E_oob
+    //           << " chi2=" << chi2
+    //           << " df=" << ((bins_kept > 0) ? (bins_kept - 1) : 0)
+    //           << std::endl;
 
     const int df = (bins_kept > 0) ? (bins_kept - 1) : 0;
     return {chi2, df};

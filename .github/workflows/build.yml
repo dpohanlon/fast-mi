@@ -68,7 +68,7 @@ jobs:
                   OpenMP_ROOT: ${{ env.OpenMP_ROOT }}
                   CMAKE_PREFIX_PATH: ${{ env.CMAKE_PREFIX_PATH }}
                   CIBW_BEFORE_ALL_LINUX: |
-                      yum -y install wget
+                      yum -y install wget libatomic
                       BOOST_VERSION=1.81.0
                       wget https://archives.boost.io/release/${BOOST_VERSION}/source/boost_${BOOST_VERSION//./_}.tar.gz
                       tar -xzf boost_${BOOST_VERSION//./_}.tar.gz

@@ -194,7 +194,7 @@ class TestMutualInformation(unittest.TestCase):
         # )
 
         estimated_mi, _ = mi_normal(
-            self.samples_normal.astype(np.float64).copy(),
+            self.samples_normal.astype(np.float32).copy(),
             self.means_normal,
             self.std_devs_normal,
             min_pop=self.MIN_BIN_CONTENT
@@ -223,8 +223,8 @@ class TestMutualInformation(unittest.TestCase):
         estimated_mi_nb, _ = mi_negative_binomial_zi(
             self.samples_nb.astype(np.int32).copy(),
             self.means_nb,
-            self.r_list_nb.astype(np.float32),
-            self.alphas_nb.astype(np.float32),
+            self.r_list_nb.astype(np.float64),
+            self.alphas_nb.astype(np.float64),
             min_pop=self.MIN_BIN_CONTENT,
         )
 
@@ -287,7 +287,7 @@ class TestMutualInformation(unittest.TestCase):
         samples_nb_no_zi_s = samples_nb_no_zi[:]
 
         dense_mi_nb, _ = mi_negative_binomial(
-            samples_nb_no_zi.astype(np.int32).copy(),
+            samples_nb_no_zi.astype(np.int64).copy(),
             self.means_nb,
             self.r_list_nb.astype(np.float32),
             min_pop=self.MIN_BIN_CONTENT,
@@ -298,7 +298,7 @@ class TestMutualInformation(unittest.TestCase):
         sparse_mi_nb, _ = mi_negative_binomial_sparse(
             samples_nb_sparse.astype(np.int32).copy(),
             self.means_nb,
-            self.r_list_nb.astype(np.float32),
+            self.r_list_nb.astype(np.float64),
             min_pop=self.MIN_BIN_CONTENT,
         )
 
@@ -324,7 +324,7 @@ class TestMutualInformation(unittest.TestCase):
         dense_mi_nb, _ = mi_negative_binomial(
             samples_nb_no_zi.astype(np.int32).copy(),
             nb_mean(self.r_list_nb, self.p_list_nb),
-            self.r_list_nb.astype(np.float32),
+            self.r_list_nb.astype(np.float64),
             min_pop=self.MIN_BIN_CONTENT,
         )
 

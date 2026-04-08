@@ -1,7 +1,8 @@
 #include <pybind11/eigen.h>
+#include <pybind11/numpy.h>
+#include <pybind11/operators.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
-#include <pybind11/operators.h>
 #include <Eigen/Sparse>
 
 #include <type_traits>
@@ -129,6 +130,53 @@ void check_min_expected(double min_expected) {
     }
 }
 
+using IntMatrixArray =
+    py::array_t<int, py::array::c_style | py::array::forcecast>;
+using DoubleMatrixArray =
+    py::array_t<double, py::array::c_style | py::array::forcecast>;
+using DoubleVectorArray =
+    py::array_t<double, py::array::c_style | py::array::forcecast>;
+
+Eigen::MatrixXi as_matrix_xi(const IntMatrixArray& a, const char* name) {
+    if (a.ndim() != 2) {
+        throw py::value_error(std::string(name) + " must be a 2D array");
+    }
+    auto buf = a.unchecked<2>();
+    Eigen::MatrixXi out(buf.shape(0), buf.shape(1));
+    for (py::ssize_t i = 0; i < buf.shape(0); ++i) {
+        for (py::ssize_t j = 0; j < buf.shape(1); ++j) {
+            out(i, j) = buf(i, j);
+        }
+    }
+    return out;
+}
+
+Eigen::MatrixXd as_matrix_xd(const DoubleMatrixArray& a, const char* name) {
+    if (a.ndim() != 2) {
+        throw py::value_error(std::string(name) + " must be a 2D array");
+    }
+    auto buf = a.unchecked<2>();
+    Eigen::MatrixXd out(buf.shape(0), buf.shape(1));
+    for (py::ssize_t i = 0; i < buf.shape(0); ++i) {
+        for (py::ssize_t j = 0; j < buf.shape(1); ++j) {
+            out(i, j) = buf(i, j);
+        }
+    }
+    return out;
+}
+
+Eigen::VectorXd as_vector_xd(const DoubleVectorArray& a, const char* name) {
+    if (a.ndim() != 1) {
+        throw py::value_error(std::string(name) + " must be a 1D array");
+    }
+    auto buf = a.unchecked<1>();
+    Eigen::VectorXd out(buf.shape(0));
+    for (py::ssize_t i = 0; i < buf.shape(0); ++i) {
+        out(i) = buf(i);
+    }
+    return out;
+}
+
 }  // namespace
 
 PYBIND11_MODULE(fast_mutual_information, m) {
@@ -136,8 +184,8 @@ PYBIND11_MODULE(fast_mutual_information, m) {
 
     m.def(
         "mi_ml",
-        [](MatrixXl& data) -> Eigen::MatrixXd {
-            Eigen::MatrixXi data_i = data.cast<int>().eval();
+        [](const IntMatrixArray& data) -> Eigen::MatrixXd {
+            Eigen::MatrixXi data_i = as_matrix_xi(data, "data");
             check_matrix_shape(data_i, "data");
             if (data_i.cols() < 2) {
                 throw py::value_error("data must contain at least two columns");
@@ -154,14 +202,15 @@ PYBIND11_MODULE(fast_mutual_information, m) {
 
     m.def(
         "mi_binarised",
-        [](Eigen::MatrixXi& samples) -> Eigen::MatrixXd {
-            check_matrix_shape(samples, "samples");
-            if (samples.cols() < 2) {
+        [](const IntMatrixArray& samples) -> Eigen::MatrixXd {
+            Eigen::MatrixXi samples_i = as_matrix_xi(samples, "samples");
+            check_matrix_shape(samples_i, "samples");
+            if (samples_i.cols() < 2) {
                 throw py::value_error(
                     "samples must contain at least two columns");
             }
             return safe_execute(
-                [&] { return mutual_information_binarised(samples); });
+                [&] { return mutual_information_binarised(samples_i); });
         },
         py::arg("samples"),
         "Fast binarised mutual information computation.\n\n"
@@ -172,10 +221,11 @@ PYBIND11_MODULE(fast_mutual_information, m) {
     m.def(
         "mi_normal",
         [](double mean1, double std_dev1, double mean2, double std_dev2,
-           Eigen::MatrixXd& data, int min_pop) -> std::pair<double, double> {
-            check_matrix_shape(data, "data");
-            check_all_finite(data, "data");
-            if (data.cols() != 2) {
+           const DoubleMatrixArray& data, int min_pop) -> std::pair<double, double> {
+            Eigen::MatrixXd data_d = as_matrix_xd(data, "data");
+            check_matrix_shape(data_d, "data");
+            check_all_finite(data_d, "data");
+            if (data_d.cols() != 2) {
                 throw py::value_error("data must have exactly two columns");
             }
             if (!std::isfinite(mean1) || !std::isfinite(mean2)) {
@@ -189,7 +239,7 @@ PYBIND11_MODULE(fast_mutual_information, m) {
             check_min_pop(min_pop);
             return safe_execute([&] {
                 return mutual_information_normal(mean1, std_dev1, mean2,
-                                                 std_dev2, data, min_pop);
+                                                 std_dev2, data_d, min_pop);
             });
         },
         py::arg("mean1"), py::arg("std_dev1"), py::arg("mean2"),
@@ -210,23 +260,27 @@ PYBIND11_MODULE(fast_mutual_information, m) {
 
     m.def(
         "mi_normal",
-        [](const Eigen::MatrixXd& data, const Eigen::VectorXd& means,
-           const Eigen::VectorXd& std_devs,
+        [](const DoubleMatrixArray& data,
+           const DoubleVectorArray& means,
+           const DoubleVectorArray& std_devs,
            int min_pop) -> std::pair<Eigen::MatrixXd, Eigen::MatrixXd> {
-            check_matrix_shape(data, "data");
-            check_vector_size(means, "means");
-            check_vector_size(std_devs, "std_devs");
-            check_all_finite(data, "data");
-            check_all_finite(means, "means");
-            check_all_finite(std_devs, "std_devs");
-            if (data.cols() != means.size() || data.cols() != std_devs.size()) {
+            Eigen::MatrixXd data_d = as_matrix_xd(data, "data");
+            Eigen::VectorXd means_d = as_vector_xd(means, "means");
+            Eigen::VectorXd std_devs_d = as_vector_xd(std_devs, "std_devs");
+            check_matrix_shape(data_d, "data");
+            check_vector_size(means_d, "means");
+            check_vector_size(std_devs_d, "std_devs");
+            check_all_finite(data_d, "data");
+            check_all_finite(means_d, "means");
+            check_all_finite(std_devs_d, "std_devs");
+            if (data_d.cols() != means_d.size() || data_d.cols() != std_devs_d.size()) {
                 throw py::value_error(
                     "data columns must match length of means and std_devs");
             }
-            check_positive(std_devs, "std_devs");
+            check_positive(std_devs_d, "std_devs");
             check_min_pop(min_pop);
             return safe_execute([&] {
-                return mutual_information_normal(data, means, std_devs,
+                return mutual_information_normal(data_d, means_d, std_devs_d,
                                                  min_pop);
             });
         },
@@ -248,24 +302,28 @@ PYBIND11_MODULE(fast_mutual_information, m) {
 
     m.def(
         "mi_normal",
-        [](Eigen::MatrixXi& data, Eigen::VectorXd& means,
-           Eigen::VectorXd& variances,
+        [](const IntMatrixArray& data,
+           const DoubleVectorArray& means,
+           const DoubleVectorArray& variances,
            int min_pop) -> std::pair<Eigen::MatrixXd, Eigen::MatrixXd> {
-            check_matrix_shape(data, "data");
-            check_vector_size(means, "means");
-            check_vector_size(variances, "variances");
-            if (data.cols() != means.size() ||
-                data.cols() != variances.size()) {
+            Eigen::MatrixXi data_i = as_matrix_xi(data, "data");
+            Eigen::VectorXd means_d = as_vector_xd(means, "means");
+            Eigen::VectorXd variances_d = as_vector_xd(variances, "variances");
+            check_matrix_shape(data_i, "data");
+            check_vector_size(means_d, "means");
+            check_vector_size(variances_d, "variances");
+            if (data_i.cols() != means_d.size() ||
+                data_i.cols() != variances_d.size()) {
                 throw py::value_error(
                     "data columns must match length of means and variances");
             }
-            check_non_negative(data, "data");
-            check_all_finite(means, "means");
-            check_all_finite(variances, "variances");
-            check_positive(variances, "variances");
+            check_non_negative(data_i, "data");
+            check_all_finite(means_d, "means");
+            check_all_finite(variances_d, "variances");
+            check_positive(variances_d, "variances");
             check_min_pop(min_pop);
             return safe_execute([&] {
-                return mutual_information_normal(data, means, variances,
+                return mutual_information_normal(data_i, means_d, variances_d,
                                                  min_pop);
             });
         },
@@ -286,24 +344,28 @@ PYBIND11_MODULE(fast_mutual_information, m) {
 
     m.def(
         "mi_normal",
-        [](MatrixXl& data, Eigen::VectorXd& means, Eigen::VectorXd& variances,
+        [](const IntMatrixArray& data,
+           const DoubleVectorArray& means,
+           const DoubleVectorArray& variances,
            int min_pop) -> std::pair<Eigen::MatrixXd, Eigen::MatrixXd> {
-            Eigen::MatrixXi data_i = data.cast<int>().eval();
+            Eigen::MatrixXi data_i = as_matrix_xi(data, "data");
+            Eigen::VectorXd means_d = as_vector_xd(means, "means");
+            Eigen::VectorXd variances_d = as_vector_xd(variances, "variances");
             check_matrix_shape(data_i, "data");
-            check_vector_size(means, "means");
-            check_vector_size(variances, "variances");
-            if (data_i.cols() != means.size() ||
-                data_i.cols() != variances.size()) {
+            check_vector_size(means_d, "means");
+            check_vector_size(variances_d, "variances");
+            if (data_i.cols() != means_d.size() ||
+                data_i.cols() != variances_d.size()) {
                 throw py::value_error(
                     "data columns must match length of means and variances");
             }
             check_non_negative(data_i, "data");
-            check_all_finite(means, "means");
-            check_all_finite(variances, "variances");
-            check_positive(variances, "variances");
+            check_all_finite(means_d, "means");
+            check_all_finite(variances_d, "variances");
+            check_positive(variances_d, "variances");
             check_min_pop(min_pop);
             return safe_execute([&] {
-                return mutual_information_normal(data_i, means, variances,
+                return mutual_information_normal(data_i, means_d, variances_d,
                                                  min_pop);
             });
         },
@@ -326,32 +388,36 @@ PYBIND11_MODULE(fast_mutual_information, m) {
 
     m.def(
         "mi_negative_binomial",
-        [](py::EigenDRef<const Eigen::MatrixXi> data, py::EigenDRef<const Eigen::VectorXd> means,
-           py::EigenDRef<const Eigen::VectorXd> concentrations,
+        [](const IntMatrixArray& data,
+           const DoubleVectorArray& means,
+           const DoubleVectorArray& concentrations,
            int min_pop) -> std::pair<Eigen::MatrixXd, Eigen::MatrixXd> {
-            check_matrix_shape(data, "data");
-            check_vector_size(means, "means");
-            check_vector_size(concentrations, "concentrations");
-            if (data.cols() != means.size() ||
-                data.cols() != concentrations.size()) {
+            Eigen::MatrixXi data_i = as_matrix_xi(data, "data");
+            Eigen::VectorXd means_d = as_vector_xd(means, "means");
+            Eigen::VectorXd concentrations_d = as_vector_xd(concentrations, "concentrations");
+            check_matrix_shape(data_i, "data");
+            check_vector_size(means_d, "means");
+            check_vector_size(concentrations_d, "concentrations");
+            if (data_i.cols() != means_d.size() ||
+                data_i.cols() != concentrations_d.size()) {
                 throw py::value_error(
                     "data columns must match length of means and "
                     "concentrations");
             }
-            check_non_negative(data, "data");
-            check_all_finite(means, "means");
-            check_all_finite(concentrations, "concentrations");
-            check_positive(means, "means");
-            check_positive(concentrations, "concentrations");
+            check_non_negative(data_i, "data");
+            check_all_finite(means_d, "means");
+            check_all_finite(concentrations_d, "concentrations");
+            check_positive(means_d, "means");
+            check_positive(concentrations_d, "concentrations");
             check_min_pop(min_pop);
 
             return safe_execute([&] {
                 py::gil_scoped_release nogil;
-                return mutual_information_nb(data, means, concentrations,
+                return mutual_information_nb(data_i, means_d, concentrations_d,
                                              min_pop);
             });
         },
-        py::arg("data").noconvert(), py::arg("means").noconvert(), py::arg("concentrations").noconvert(),
+        py::arg("data"), py::arg("means"), py::arg("concentrations"),
         py::arg("min_pop") = 25,
         "Fast mutual information computation with negative binomial "
         "marginals.\n\n"
@@ -368,31 +434,37 @@ PYBIND11_MODULE(fast_mutual_information, m) {
 
     m.def(
         "mi_zero_inflated_negative_binomial_dump_first_tree",
-        [](Eigen::MatrixXi& data, Eigen::VectorXd& means,
-           Eigen::VectorXd& concentrations, Eigen::VectorXd& alphas,
+        [](const IntMatrixArray& data,
+           const DoubleVectorArray& means,
+           const DoubleVectorArray& concentrations,
+           const DoubleVectorArray& alphas,
            const std::string& csv_filename,
            int min_pop) -> int {
-            check_matrix_shape(data, "data");
-            check_vector_size(means, "means");
-            check_vector_size(concentrations, "concentrations");
-            check_vector_size(alphas, "alphas");
-            if (data.cols() != means.size() ||
-                data.cols() != concentrations.size() ||
-                data.cols() != alphas.size()) {
+            Eigen::MatrixXi data_i = as_matrix_xi(data, "data");
+            Eigen::VectorXd means_d = as_vector_xd(means, "means");
+            Eigen::VectorXd concentrations_d = as_vector_xd(concentrations, "concentrations");
+            Eigen::VectorXd alphas_d = as_vector_xd(alphas, "alphas");
+            check_matrix_shape(data_i, "data");
+            check_vector_size(means_d, "means");
+            check_vector_size(concentrations_d, "concentrations");
+            check_vector_size(alphas_d, "alphas");
+            if (data_i.cols() != means_d.size() ||
+                data_i.cols() != concentrations_d.size() ||
+                data_i.cols() != alphas_d.size()) {
                 throw py::value_error(
                     "data columns must match length of means, concentrations, and alphas");
             }
-            check_non_negative(data, "data");
-            check_all_finite(means, "means");
-            check_all_finite(concentrations, "concentrations");
-            check_all_finite(alphas, "alphas");
-            check_positive(means, "means");
-            check_positive(concentrations, "concentrations");
+            check_non_negative(data_i, "data");
+            check_all_finite(means_d, "means");
+            check_all_finite(concentrations_d, "concentrations");
+            check_all_finite(alphas_d, "alphas");
+            check_positive(means_d, "means");
+            check_positive(concentrations_d, "concentrations");
             check_min_pop(min_pop);
 
-            safe_execute([&] {
+            return safe_execute([&] {
                 return mutual_information_zinb_dump_first_tree(
-                    data, means, concentrations, alphas, csv_filename, min_pop);
+                    data_i, means_d, concentrations_d, alphas_d, csv_filename, min_pop);
             });
         },
         py::arg("data"), py::arg("means"), py::arg("concentrations"),
@@ -411,38 +483,44 @@ PYBIND11_MODULE(fast_mutual_information, m) {
         "Returns:\n"
         "    int");
 
-
     m.def(
         "mi_negative_binomial_zi",
-        [](py::EigenDRef<const Eigen::MatrixXi> data, py::EigenDRef<const Eigen::VectorXd> means, py::EigenDRef<const Eigen::VectorXd> concentrations, py::EigenDRef<const Eigen::VectorXd> alphas,
-        int min_pop) -> std::pair<Eigen::MatrixXd, Eigen::MatrixXd> {
-            check_matrix_shape(data, "data");
-            check_vector_size(means, "means");
-            check_vector_size(concentrations, "concentrations");
-            check_vector_size(alphas, "alphas");
-            if (data.cols() != means.size() ||
-                data.cols() != concentrations.size() ||
-                data.cols() != alphas.size()) {
+        [](const IntMatrixArray& data,
+           const DoubleVectorArray& means,
+           const DoubleVectorArray& concentrations,
+           const DoubleVectorArray& alphas,
+           int min_pop) -> std::pair<Eigen::MatrixXd, Eigen::MatrixXd> {
+            Eigen::MatrixXi data_i = as_matrix_xi(data, "data");
+            Eigen::VectorXd means_d = as_vector_xd(means, "means");
+            Eigen::VectorXd concentrations_d = as_vector_xd(concentrations, "concentrations");
+            Eigen::VectorXd alphas_d = as_vector_xd(alphas, "alphas");
+            check_matrix_shape(data_i, "data");
+            check_vector_size(means_d, "means");
+            check_vector_size(concentrations_d, "concentrations");
+            check_vector_size(alphas_d, "alphas");
+            if (data_i.cols() != means_d.size() ||
+                data_i.cols() != concentrations_d.size() ||
+                data_i.cols() != alphas_d.size()) {
                 throw py::value_error(
                     "data columns must match length of means, concentrations "
                     "and alphas");
             }
-            check_non_negative(data, "data");
-            check_all_finite(means, "means");
-            check_all_finite(concentrations, "concentrations");
-            check_all_finite(alphas, "alphas");
-            check_positive(means, "means");
-            check_positive(concentrations, "concentrations");
-            check_probabilities(alphas, "alphas");
+            check_non_negative(data_i, "data");
+            check_all_finite(means_d, "means");
+            check_all_finite(concentrations_d, "concentrations");
+            check_all_finite(alphas_d, "alphas");
+            check_positive(means_d, "means");
+            check_positive(concentrations_d, "concentrations");
+            check_probabilities(alphas_d, "alphas");
             check_min_pop(min_pop);
             return safe_execute([&] {
                 py::gil_scoped_release nogil;
-                return mutual_information_zinb(data, means, concentrations,
-                                               alphas, min_pop);
+                return mutual_information_zinb(data_i, means_d, concentrations_d,
+                                               alphas_d, min_pop);
             });
         },
-        py::arg("data").noconvert(), py::arg("means").noconvert(), py::arg("concentrations").noconvert(),
-        py::arg("alphas").noconvert(), py::arg("min_pop") = 25,
+        py::arg("data"), py::arg("means"), py::arg("concentrations"),
+        py::arg("alphas"), py::arg("min_pop") = 25,
         "Fast mutual information computation with negative binomial "
         "marginals.\n\n"
         "Parameters:\n"
@@ -461,55 +539,66 @@ PYBIND11_MODULE(fast_mutual_information, m) {
 
     m.def(
         "mi_negative_binomial_exposure",
-        [](py::EigenDRef<const Eigen::MatrixXi> data, py::EigenDRef<const Eigen::VectorXd> means, py::EigenDRef<const Eigen::VectorXd> concentrations, py::EigenDRef<const Eigen::VectorXd> exposure,
-        int min_pop) -> std::pair<Eigen::MatrixXd, Eigen::MatrixXd> {
+        [](const IntMatrixArray& data,
+           const DoubleVectorArray& means,
+           const DoubleVectorArray& concentrations,
+           const DoubleVectorArray& exposure,
+           int min_pop) -> std::pair<Eigen::MatrixXd, Eigen::MatrixXd> {
 
-            check_matrix_shape(data, "data");
-            check_vector_size(means, "means");
-            check_vector_size(concentrations, "concentrations");
-            check_vector_size(exposure, "exposure");
-            if (data.cols() != means.size() ||
-                data.cols() != concentrations.size()) {
+            Eigen::MatrixXi data_i = as_matrix_xi(data, "data");
+            Eigen::VectorXd means_d = as_vector_xd(means, "means");
+            Eigen::VectorXd concentrations_d = as_vector_xd(concentrations, "concentrations");
+            Eigen::VectorXd exposure_d = as_vector_xd(exposure, "exposure");
+
+            check_matrix_shape(data_i, "data");
+            check_vector_size(means_d, "means");
+            check_vector_size(concentrations_d, "concentrations");
+            check_vector_size(exposure_d, "exposure");
+            if (data_i.cols() != means_d.size() ||
+                data_i.cols() != concentrations_d.size()) {
                 throw py::value_error(
                     "data columns must match length of means, concentrations");
             }
-            if (data.rows() != exposure.size()) {
+            if (data_i.rows() != exposure_d.size()) {
                 throw py::value_error(
                     "data rows must match length of exposure");
             }
-            check_non_negative(data, "data");
-            check_all_finite(means, "means");
-            check_all_finite(concentrations, "concentrations");
-            check_all_finite(exposure, "exposure");
-            check_positive(means, "means");
-            check_positive(concentrations, "concentrations");
-            check_positive(exposure, "exposure");
+            check_non_negative(data_i, "data");
+            check_all_finite(means_d, "means");
+            check_all_finite(concentrations_d, "concentrations");
+            check_all_finite(exposure_d, "exposure");
+            check_positive(means_d, "means");
+            check_positive(concentrations_d, "concentrations");
+            check_positive(exposure_d, "exposure");
             check_min_pop(min_pop);
 
             return safe_execute([&] {
                 py::gil_scoped_release nogil;
-                return mutual_information_nb(data, means, concentrations,
-                                               exposure, min_pop);
+                return mutual_information_nb(data_i, means_d, concentrations_d,
+                                             exposure_d, min_pop);
             });
 
         },
-        py::arg("data").noconvert(),
-        py::arg("means").noconvert(),
-        py::arg("concentrations").noconvert(),
-        py::arg("exposure").noconvert(),
+        py::arg("data"),
+        py::arg("means"),
+        py::arg("concentrations"),
+        py::arg("exposure"),
         py::arg("min_pop") = 25,
         "Fast MI with NB marginals **and per-sample exposure offsets**.\n"
         "Interpret 'means_mu0' as baseline means on unit exposure; the per-sample\n"
         "mean is mu_j = mu0 * exposure[j]. The marginal CDF used by the kd-tree is\n"
         "the mixture F_mix(k) = mean_j F_NB(k; mu0*exposure[j], r)."
     );
+
     // Sparse matrix versions
 
     m.def(
         "mi_normal_sparse",
-        [](Eigen::SparseMatrix<int>& data, Eigen::VectorXd& means,
-           Eigen::VectorXd& std_devs, int min_pop) -> std::pair<Eigen::MatrixXd, Eigen::MatrixXd> {
-            return mutual_information_normal_sparse(data, means, std_devs, min_pop);
+        [](Eigen::SparseMatrix<int>& data, const DoubleVectorArray& means,
+           const DoubleVectorArray& std_devs, int min_pop) -> std::pair<Eigen::MatrixXd, Eigen::MatrixXd> {
+            Eigen::VectorXd means_d = as_vector_xd(means, "means");
+            Eigen::VectorXd std_devs_d = as_vector_xd(std_devs, "std_devs");
+            return mutual_information_normal_sparse(data, means_d, std_devs_d, min_pop);
         },
         py::arg("data"), py::arg("means"), py::arg("std_devs"),
         py::arg("min_pop") = 25,
@@ -528,9 +617,11 @@ PYBIND11_MODULE(fast_mutual_information, m) {
 
     m.def(
         "mi_negative_binomial_sparse",
-        [](Eigen::SparseMatrix<int>& data, Eigen::VectorXd& means,
-           Eigen::VectorXd& concentrations, int min_pop) -> std::pair<Eigen::MatrixXd, Eigen::MatrixXd> {
-            return mutual_information_nb_sparse(data, means, concentrations, min_pop);
+        [](Eigen::SparseMatrix<int>& data, const DoubleVectorArray& means,
+           const DoubleVectorArray& concentrations, int min_pop) -> std::pair<Eigen::MatrixXd, Eigen::MatrixXd> {
+            Eigen::VectorXd means_d = as_vector_xd(means, "means");
+            Eigen::VectorXd concentrations_d = as_vector_xd(concentrations, "concentrations");
+            return mutual_information_nb_sparse(data, means_d, concentrations_d, min_pop);
         },
         py::arg("data"), py::arg("means"), py::arg("concentrations"),
         py::arg("min_pop") = 25,
@@ -549,39 +640,42 @@ PYBIND11_MODULE(fast_mutual_information, m) {
 
     m.def(
         "mi_normal_crossfit",
-        [](Eigen::MatrixXi& data,
-           py::EigenDRef<const Eigen::VectorXd> means,
-           py::EigenDRef<const Eigen::VectorXd> std_devs,
+        [](const IntMatrixArray& data,
+           const DoubleVectorArray& means,
+           const DoubleVectorArray& std_devs,
            int min_pop,
            std::uint64_t seed,
            double min_expected)
            -> std::tuple<Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd> {
-            check_matrix_shape(data, "data");
-            check_vector_size(means, "means");
-            check_vector_size(std_devs, "std_devs");
-            if (data.cols() < 2) {
+            Eigen::MatrixXi data_i = as_matrix_xi(data, "data");
+            Eigen::VectorXd means_d = as_vector_xd(means, "means");
+            Eigen::VectorXd std_devs_d = as_vector_xd(std_devs, "std_devs");
+            check_matrix_shape(data_i, "data");
+            check_vector_size(means_d, "means");
+            check_vector_size(std_devs_d, "std_devs");
+            if (data_i.cols() < 2) {
                 throw py::value_error("data must contain at least two columns");
             }
-            if (data.cols() != means.size() || data.cols() != std_devs.size()) {
+            if (data_i.cols() != means_d.size() || data_i.cols() != std_devs_d.size()) {
                 throw py::value_error("data columns must match length of means and std_devs");
             }
-            check_non_negative(data, "data");
-            check_all_finite(means, "means");
-            check_all_finite(std_devs, "std_devs");
-            check_positive(std_devs, "std_devs");
+            check_non_negative(data_i, "data");
+            check_all_finite(means_d, "means");
+            check_all_finite(std_devs_d, "std_devs");
+            check_positive(std_devs_d, "std_devs");
             check_min_pop(min_pop);
             check_min_expected(min_expected);
 
             return safe_execute([&] {
                 py::gil_scoped_release nogil;
                 return mutual_information_normal_crossfit(
-                    data, means, std_devs, min_pop, seed, min_expected
+                    data_i, means_d, std_devs_d, min_pop, seed, min_expected
                 );
             });
         },
         py::arg("data"),
-        py::arg("means").noconvert(),
-        py::arg("std_devs").noconvert(),
+        py::arg("means"),
+        py::arg("std_devs"),
         py::arg("min_pop") = 25,
         py::arg("seed") = 0,
         py::arg("min_expected") = 5.0,
@@ -603,40 +697,42 @@ PYBIND11_MODULE(fast_mutual_information, m) {
 
     m.def(
         "mi_normal_crossfit",
-        [](MatrixXl& data,
-           py::EigenDRef<const Eigen::VectorXd> means,
-           py::EigenDRef<const Eigen::VectorXd> std_devs,
+        [](const IntMatrixArray& data,
+           const DoubleVectorArray& means,
+           const DoubleVectorArray& std_devs,
            int min_pop,
            std::uint64_t seed,
            double min_expected)
            -> std::tuple<Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd> {
-            Eigen::MatrixXi data_i = data.cast<int>().eval();
+            Eigen::MatrixXi data_i = as_matrix_xi(data, "data");
+            Eigen::VectorXd means_d = as_vector_xd(means, "means");
+            Eigen::VectorXd std_devs_d = as_vector_xd(std_devs, "std_devs");
             check_matrix_shape(data_i, "data");
-            check_vector_size(means, "means");
-            check_vector_size(std_devs, "std_devs");
+            check_vector_size(means_d, "means");
+            check_vector_size(std_devs_d, "std_devs");
             if (data_i.cols() < 2) {
                 throw py::value_error("data must contain at least two columns");
             }
-            if (data_i.cols() != means.size() || data_i.cols() != std_devs.size()) {
+            if (data_i.cols() != means_d.size() || data_i.cols() != std_devs_d.size()) {
                 throw py::value_error("data columns must match length of means and std_devs");
             }
             check_non_negative(data_i, "data");
-            check_all_finite(means, "means");
-            check_all_finite(std_devs, "std_devs");
-            check_positive(std_devs, "std_devs");
+            check_all_finite(means_d, "means");
+            check_all_finite(std_devs_d, "std_devs");
+            check_positive(std_devs_d, "std_devs");
             check_min_pop(min_pop);
             check_min_expected(min_expected);
 
             return safe_execute([&] {
                 py::gil_scoped_release nogil;
                 return mutual_information_normal_crossfit(
-                    data_i, means, std_devs, min_pop, seed, min_expected
+                    data_i, means_d, std_devs_d, min_pop, seed, min_expected
                 );
             });
         },
         py::arg("data"),
-        py::arg("means").noconvert(),
-        py::arg("std_devs").noconvert(),
+        py::arg("means"),
+        py::arg("std_devs"),
         py::arg("min_pop") = 25,
         py::arg("seed") = 0,
         py::arg("min_expected") = 5.0,
@@ -645,9 +741,9 @@ PYBIND11_MODULE(fast_mutual_information, m) {
 
     m.def(
         "mi_negative_binomial_crossfit",
-        [](py::EigenDRef<const Eigen::MatrixXi> data,
-           py::EigenDRef<const Eigen::VectorXd> means,
-           py::EigenDRef<const Eigen::VectorXd> concentrations,
+        [](const IntMatrixArray& data,
+           const DoubleVectorArray& means,
+           const DoubleVectorArray& concentrations,
            int min_pop,
            std::uint64_t seed,
            double min_expected,
@@ -655,22 +751,26 @@ PYBIND11_MODULE(fast_mutual_information, m) {
            double empirical_pseudocount)
            -> std::tuple<Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd> {
 
-            check_matrix_shape(data, "data");
-            check_vector_size(means, "means");
-            check_vector_size(concentrations, "concentrations");
+            Eigen::MatrixXi data_i = as_matrix_xi(data, "data");
+            Eigen::VectorXd means_d = as_vector_xd(means, "means");
+            Eigen::VectorXd concentrations_d = as_vector_xd(concentrations, "concentrations");
 
-            if (data.cols() < 2) {
+            check_matrix_shape(data_i, "data");
+            check_vector_size(means_d, "means");
+            check_vector_size(concentrations_d, "concentrations");
+
+            if (data_i.cols() < 2) {
                 throw py::value_error("data must contain at least two columns");
             }
-            if (data.cols() != means.size() || data.cols() != concentrations.size()) {
+            if (data_i.cols() != means_d.size() || data_i.cols() != concentrations_d.size()) {
                 throw py::value_error("data columns must match length of means and concentrations");
             }
 
-            check_non_negative(data, "data");
-            check_all_finite(means, "means");
-            check_all_finite(concentrations, "concentrations");
-            check_positive(means, "means");
-            check_positive(concentrations, "concentrations");
+            check_non_negative(data_i, "data");
+            check_all_finite(means_d, "means");
+            check_all_finite(concentrations_d, "concentrations");
+            check_positive(means_d, "means");
+            check_positive(concentrations_d, "concentrations");
 
             check_min_pop(min_pop);
             check_min_expected(min_expected);
@@ -682,9 +782,9 @@ PYBIND11_MODULE(fast_mutual_information, m) {
             return safe_execute([&] {
                 py::gil_scoped_release nogil;
                 return mutual_information_nb_crossfit(
-                    data,
-                    means,
-                    concentrations,
+                    data_i,
+                    means_d,
+                    concentrations_d,
                     min_pop,
                     seed,
                     min_expected,
@@ -693,9 +793,9 @@ PYBIND11_MODULE(fast_mutual_information, m) {
                 );
             });
         },
-        py::arg("data").noconvert(),
-        py::arg("means").noconvert(),
-        py::arg("concentrations").noconvert(),
+        py::arg("data"),
+        py::arg("means"),
+        py::arg("concentrations"),
         py::arg("min_pop") = 25,
         py::arg("seed") = 0,
         py::arg("min_expected") = 5.0,
@@ -710,51 +810,56 @@ PYBIND11_MODULE(fast_mutual_information, m) {
 
     m.def(
         "mi_zero_inflated_negative_binomial_crossfit",
-        [](py::EigenDRef<const Eigen::MatrixXi> data,
-           py::EigenDRef<const Eigen::VectorXd> means,
-           py::EigenDRef<const Eigen::VectorXd> concentrations,
-           py::EigenDRef<const Eigen::VectorXd> alphas,
+        [](const IntMatrixArray& data,
+           const DoubleVectorArray& means,
+           const DoubleVectorArray& concentrations,
+           const DoubleVectorArray& alphas,
            int min_pop,
            std::uint64_t seed,
            double min_expected)
            -> std::tuple<Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd> {
 
-            check_matrix_shape(data, "data");
-            check_vector_size(means, "means");
-            check_vector_size(concentrations, "concentrations");
-            check_vector_size(alphas, "alphas");
+            Eigen::MatrixXi data_i = as_matrix_xi(data, "data");
+            Eigen::VectorXd means_d = as_vector_xd(means, "means");
+            Eigen::VectorXd concentrations_d = as_vector_xd(concentrations, "concentrations");
+            Eigen::VectorXd alphas_d = as_vector_xd(alphas, "alphas");
 
-            if (data.cols() < 2) {
+            check_matrix_shape(data_i, "data");
+            check_vector_size(means_d, "means");
+            check_vector_size(concentrations_d, "concentrations");
+            check_vector_size(alphas_d, "alphas");
+
+            if (data_i.cols() < 2) {
                 throw py::value_error("data must contain at least two columns");
             }
-            if (data.cols() != means.size() ||
-                data.cols() != concentrations.size() ||
-                data.cols() != alphas.size()) {
+            if (data_i.cols() != means_d.size() ||
+                data_i.cols() != concentrations_d.size() ||
+                data_i.cols() != alphas_d.size()) {
                 throw py::value_error(
                     "data columns must match length of means, concentrations, and alphas");
             }
 
-            check_non_negative(data, "data");
-            check_all_finite(means, "means");
-            check_all_finite(concentrations, "concentrations");
-            check_all_finite(alphas, "alphas");
-            check_positive(means, "means");
-            check_positive(concentrations, "concentrations");
-            check_probabilities(alphas, "alphas");
+            check_non_negative(data_i, "data");
+            check_all_finite(means_d, "means");
+            check_all_finite(concentrations_d, "concentrations");
+            check_all_finite(alphas_d, "alphas");
+            check_positive(means_d, "means");
+            check_positive(concentrations_d, "concentrations");
+            check_probabilities(alphas_d, "alphas");
             check_min_pop(min_pop);
             check_min_expected(min_expected);
 
             return safe_execute([&] {
                 py::gil_scoped_release nogil;
                 return mutual_information_zinb_crossfit(
-                    data, means, concentrations, alphas, min_pop, seed, min_expected
+                    data_i, means_d, concentrations_d, alphas_d, min_pop, seed, min_expected
                 );
             });
         },
-        py::arg("data").noconvert(),
-        py::arg("means").noconvert(),
-        py::arg("concentrations").noconvert(),
-        py::arg("alphas").noconvert(),
+        py::arg("data"),
+        py::arg("means"),
+        py::arg("concentrations"),
+        py::arg("alphas"),
         py::arg("min_pop") = 25,
         py::arg("seed") = 0,
         py::arg("min_expected") = 5.0,

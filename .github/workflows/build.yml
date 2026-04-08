@@ -16,17 +16,14 @@ jobs:
         strategy:
             matrix:
                 os: [ubuntu-latest, macos-14]
-                python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
-                # os: [macos-14]
-                # python-version: ["3.13"]
 
         steps:
-            - uses: actions/checkout@v3
+            - uses: actions/checkout@v4
 
             - name: Set up Python
-              uses: actions/setup-python@v4
+              uses: actions/setup-python@v5
               with:
-                  python-version: ${{ matrix.python-version }}
+                  python-version: "3.11"
 
             - name: Install dependencies
               run: |
@@ -34,13 +31,6 @@ jobs:
                   ssh-add - <<< "${{ secrets.PRIVATE_SSH_KEY }}"
                   git submodule update --init --recursive
                   python -m pip install --upgrade pip
-
-            # - name: Install dependencies Linux
-            #   if: runner.os == 'Linux'
-            #   run: |
-            #     sudo apt install python3-dev
-            #     sudo apt install libboost-all-dev
-            #     sudo apt install libeigen3-dev
 
             - name: Install dependencies Mac
               if: runner.os == 'macOS'
@@ -51,7 +41,6 @@ jobs:
                   echo "OpenMP_ROOT=$(brew --prefix)/opt/libomp" >> $GITHUB_ENV
                   echo "CMAKE_PREFIX_PATH=$(brew --prefix);$(brew --prefix llvm)" >> $GITHUB_ENV
 
-            # Make sure we're only building wheels for the OS version we're on
             - name: Set macOS deployment target
               if: runner.os == 'macOS'
               run: echo "MACOSX_DEPLOYMENT_TARGET=$(sw_vers -productVersion | cut -d '.' -f 1-2)" >> $GITHUB_ENV
@@ -63,13 +52,15 @@ jobs:
               env:
                   CC: ${{ env.CC }}
                   CXX: ${{ env.CXX }}
-                  CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
-                  CIBW_SKIP: "*musllinux*"
-                  CIBW_BUILD: "cp310-* cp311-* cp312-* cp313-* cp314-*"
                   OpenMP_ROOT: ${{ env.OpenMP_ROOT }}
                   CMAKE_PREFIX_PATH: ${{ env.CMAKE_PREFIX_PATH }}
+                  CIBW_BUILD: "cp310-* cp311-* cp312-* cp313-* cp314-*"
+                  CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
+                  CIBW_ARCHS_LINUX: "x86_64"
+                  CIBW_SKIP: "*musllinux*"
                   CIBW_TEST_REQUIRES: "nose2 scipy"
-                  CIBW_TEST_COMMAND: "cd {project}/tests && nose2"
+                  CIBW_TEST_SOURCES: "tests"
+                  CIBW_TEST_COMMAND: "cd tests && nose2"
                   CIBW_BEFORE_ALL_LINUX: |
                       yum -y install wget libatomic
                       BOOST_VERSION=1.81.0
@@ -89,55 +80,77 @@ jobs:
             - name: Upload wheels
               uses: actions/upload-artifact@v4
               with:
-                  name: wheels-${{ matrix.os }}-py${{ matrix.python-version }}
+                  name: wheels-${{ matrix.os }}
                   path: wheelhouse/*.whl
 
+    build_sdist:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Set up Python
+              uses: actions/setup-python@v5
+              with:
+                  python-version: "3.11"
+
+            - name: Build sdist
+              run: |
+                  python -m pip install --upgrade pip build
+                  python -m build --sdist
+
+            - name: Upload sdist
+              uses: actions/upload-artifact@v4
+              with:
+                  name: sdist
+                  path: dist/*.tar.gz
+
     release:
-        needs: [build_wheels]
+        needs: [build_wheels, build_sdist]
         runs-on: ubuntu-latest
         if: startsWith(github.ref, 'refs/tags')
 
         steps:
-            - name: Download artifact
+            - name: Download release artifacts
               uses: actions/download-artifact@v4
               with:
-                  pattern: wheels-*
+                  pattern: "*"
                   path: dist/
                   merge-multiple: true
+
+            - name: List release files
+              run: ls -R dist
+
             - name: Create Release and Upload Assets
               uses: ncipollo/release-action@v1
               with:
                   tag: ${{ github.ref_name }}
                   name: Release ${{ github.ref_name }}
                   artifacts: dist/*
-                  artifactContentType: application/zip
+                  artifactContentType: application/octet-stream
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
     publish:
-        needs: [build_wheels]
+        needs: [build_wheels, build_sdist]
         runs-on: ubuntu-latest
         if: startsWith(github.ref, 'refs/tags')
 
         steps:
-            - name: Download all wheel artifacts
+            - name: Download distribution artifacts
               uses: actions/download-artifact@v4
               with:
-                  pattern: wheels-*
+                  pattern: "*"
                   path: dist/
+                  merge-multiple: true
 
-            - name: Move wheels to a flat directory and clean up
-              run: |
-                  find dist -type f -name "*.whl" -exec mv {} dist/ \;
-                  find dist -mindepth 1 -type d -empty -delete
-
-            - name: List files to be published (for debugging)
+            - name: List files to be published
               run: ls -R dist
 
             - name: Publish to test PyPI
               uses: pypa/gh-action-pypi-publish@v1.13.0
               with:
-                  password: ${{ secrets.TEST_PYPI_API_TOKEN }}
                   repository_url: https://test.pypi.org/legacy/
+                  password: ${{ secrets.TEST_PYPI_API_TOKEN }}
 
             - name: Publish tagged version to PyPI
               uses: pypa/gh-action-pypi-publish@v1.13.0

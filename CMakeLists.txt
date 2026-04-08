@@ -28,7 +28,7 @@ endif()
 find_package(Threads REQUIRED)
 
 # Eigen
-find_package(Eigen3 3.4 REQUIRED NO_MODULE)
+find_package(Eigen3 REQUIRED NO_MODULE)
 
 # FastNB (in-tree)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extern/FastNB)

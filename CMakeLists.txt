@@ -109,8 +109,8 @@ install(DIRECTORY mimiq/
     FILES_MATCHING PATTERN "*.hpp" PATTERN "*.h"
 )
 
-install(EXPORT MimiqTargets
-    FILE MimiqTargets.cmake
+install(EXPORT MIMIQTargets
+    FILE MIMIQTargets.cmake
     NAMESPACE Mimiq::
     DESTINATION lib/cmake/MIMIQ
 )
@@ -118,7 +118,7 @@ install(EXPORT MimiqTargets
 include(CMakePackageConfigHelpers)
 
 write_basic_package_version_file(
-    "${CMAKE_CURRENT_BINARY_DIR}/MimiqConfigVersion.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/MIMIQConfigVersion.cmake"
     VERSION ${PROJECT_VERSION}
     COMPATIBILITY AnyNewerVersion
 )

@@ -91,7 +91,7 @@ if(OpenMP_CXX_FOUND)
 endif()
 
 install(TARGETS mimiq_lib
-    EXPORT MimiqTargets
+    EXPORT MIMIQTargets
     ARCHIVE DESTINATION lib
     LIBRARY DESTINATION lib
     RUNTIME DESTINATION bin
@@ -111,7 +111,7 @@ install(DIRECTORY mimiq/
 
 install(EXPORT MIMIQTargets
     FILE MIMIQTargets.cmake
-    NAMESPACE Mimiq::
+    NAMESPACE MIMIQ::
     DESTINATION lib/cmake/MIMIQ
 )
 

@@ -59,8 +59,7 @@ jobs:
                   CIBW_ARCHS_LINUX: "x86_64"
                   CIBW_SKIP: "*musllinux*"
                   CIBW_TEST_REQUIRES: "nose2 scipy"
-                  CIBW_TEST_SOURCES: "tests"
-                  CIBW_TEST_COMMAND: "cd tests && nose2"
+                  CIBW_TEST_COMMAND: "python -m nose2 -s {project}/tests"
                   CIBW_BEFORE_ALL_LINUX: |
                       yum -y install wget libatomic
                       BOOST_VERSION=1.81.0
@@ -85,6 +84,7 @@ jobs:
 
     build_sdist:
         runs-on: ubuntu-latest
+
         steps:
             - uses: actions/checkout@v4
 

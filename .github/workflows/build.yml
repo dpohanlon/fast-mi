@@ -85,7 +85,7 @@ jobs:
               if: runner.os == 'Linux'
               run: |
                   pip install nose2 scipy
-                  pip install --no-index --find-links=wheelhouse fast_mutual_information
+                  pip install --no-index --find-links=wheelhouse mimiq
                   cd tests
                   nose2
 

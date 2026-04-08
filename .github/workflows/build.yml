@@ -65,6 +65,7 @@ jobs:
                   CXX: ${{ env.CXX }}
                   CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
                   CIBW_SKIP: "*musllinux*"
+                  CIBW_BUILD: "cp310-* cp311-* cp312-* cp313-* cp314-*"
                   OpenMP_ROOT: ${{ env.OpenMP_ROOT }}
                   CMAKE_PREFIX_PATH: ${{ env.CMAKE_PREFIX_PATH }}
                   CIBW_BEFORE_ALL_LINUX: |
@@ -86,7 +87,7 @@ jobs:
               if: runner.os == 'Linux'
               run: |
                   pip install nose2 scipy
-                  pip install --no-index --find-links=wheelhouse fast_mutual_information
+                  pip install wheelhouse/*.whl
                   cd tests
                   nose2
 

@@ -12,6 +12,7 @@
 #include <unordered_map>
 #include <vector>
 #include <fstream>
+#include <type_traits>
 
 #include "copula.hpp"
 #include "point.hpp"
@@ -34,6 +35,7 @@ struct KDNode {
     bool is_leaf;
     int split_dim;  // 0 for x, 1 for y
     T split_val;
+    int leaf_id = -1;
 
     std::unique_ptr<KDNode> left;
     std::unique_ptr<KDNode> right;
@@ -131,11 +133,10 @@ class KDTree {
     }
 
     std::pair<double, double> compute_mutual_information() const {
-        double mi    = 0.0;
-        double area  = 0.0;
-        double chi2  = 0.0;
-        traverse_and_compute(root.get(), mi, area, chi2);
-        return { mi, chi2 };
+        double mi = 0.0, area = 0.0, chi2 = 0.0;
+        const double root_area_u = compute_root_area_u();
+        traverse_and_compute(root.get(), root_area_u, mi, area, chi2);
+        return {mi, chi2};
     }
 
     int calculate_depth(const KDNode<T>* node) const {
@@ -155,11 +156,16 @@ class KDTree {
 
     void dumpSplittingValuesToCSV(const std::string &filename) const;
 
+    template<class InputIt>
+    std::pair<double, int> chi2_holdout(InputIt first, InputIt last, int n_test, double min_expected = 5.0) const;
+
    private:
     std::unique_ptr<KDNode<T>> root;
     int min_points;
     int total_count;
     bool zi;
+
+    mutable double leaf_mass_total = 0.0;
 
     std::vector<std::pair<Point<T>,int>> points_storage;
 
@@ -171,6 +177,23 @@ class KDTree {
     void for_each_point_impl(const KDNode<int>* node, F&& emit) const;
 
     void dumpSplittingValuesHelper(const KDNode<T>* node, std::ofstream &out, int depth) const;
+
+    double compute_root_area_u() const {
+        // if (mode_ == MiMode::Raw) return 1.0;
+        // if constexpr (std::is_integral<T>::value) {
+        //     const auto& b = root->bounds;
+        //     const double x_lo = (b.min_x > std::numeric_limits<int>::min())
+        //                             ? copula->cdf_x(b.min_x - 1) : 0.0;
+        //     const double x_hi = copula->cdf_x(b.max_x);
+        //     const double y_lo = (b.min_y > std::numeric_limits<int>::min())
+        //                             ? copula->cdf_y(b.min_y - 1) : 0.0;
+        //     const double y_hi = copula->cdf_y(b.max_y);
+        //     return std::max(1e-15, (x_hi - x_lo) * (y_hi - y_lo));
+        // } else {
+        //     return 1.0;
+        // }
+        return 1.0;
+    }
 
     // For ints this can be optimised by sorting!
 
@@ -217,6 +240,50 @@ class KDTree {
         }
         result.emplace_back(current, count);
         return result;
+    }
+
+    mutable bool leaf_cache_ready = false;
+    mutable std::vector<const KDNode<T>*> leaf_nodes;
+    mutable std::vector<double> leaf_prob;
+
+    void build_leaf_cache() const {
+        leaf_nodes.clear();
+        leaf_prob.clear();
+        leaf_mass_total = 0.0;
+
+        std::vector<const KDNode<T>*> stack;
+        stack.push_back(root.get());
+
+        while (!stack.empty()) {
+            const KDNode<T>* node = stack.back();
+            stack.pop_back();
+            if (!node) continue;
+
+            if (node->is_leaf) {
+                const int id = static_cast<int>(leaf_nodes.size());
+                const_cast<KDNode<T>*>(node)->leaf_id = id;
+                leaf_nodes.push_back(node);
+
+                const double q = leaf_rect_null_mass(*node);
+                leaf_prob.push_back(q);
+                leaf_mass_total += q;
+            } else {
+                stack.push_back(node->right.get());
+                stack.push_back(node->left.get());
+            }
+        }
+
+        leaf_mass_total = std::min(1.0, std::max(0.0, leaf_mass_total));
+        leaf_cache_ready = true;
+    }
+
+    int locate_leaf_id(const Point<T>& p) const {
+        const KDNode<T>* node = root.get();
+        while (node && !node->is_leaf) {
+            const T coord = (node->split_dim == 0) ? p.x : p.y;
+            node = (coord < node->split_val) ? node->left.get() : node->right.get();
+        }
+        return node ? node->leaf_id : -1;
     }
 
     // Replace your count_duplicates_unordered with this:
@@ -383,102 +450,257 @@ class KDTree {
                compute_total_count(node->right.get());
     }
 
+    long long range_mass(size_t b, size_t e) const {
+        long long s = 0;
+        for (size_t i = b; i < e; ++i) s += (long long)points_storage[i].second;
+        return s;
+    }
+
+    bool is_degenerate_bounds(const Bounds<T>& bounds) const {
+        if constexpr (std::is_integral<T>::value) {
+            return (bounds.min_x > bounds.max_x) || (bounds.min_y > bounds.max_y);
+        } else {
+            return (bounds.max_x - bounds.min_x < 1e-8) || (bounds.max_y - bounds.min_y < 1e-8);
+        }
+    }
+
+    static inline T coord_of(const std::pair<Point<T>, int>& pr, int axis) {
+        return (axis == 0) ? pr.first.x : pr.first.y;
+    }
+
+    void sort_range_by_axis(size_t b, size_t e, int axis) {
+        auto comp = [axis](const auto& A, const auto& B) {
+            return coord_of(A, axis) < coord_of(B, axis);
+        };
+        std::sort(points_storage.begin() + b, points_storage.begin() + e, comp);
+    }
+
+    T first_coord(size_t b, int axis) const {
+        return coord_of(points_storage[b], axis);
+    }
+
+    T last_coord(size_t e, int axis) const {
+        return coord_of(points_storage[e - 1], axis);
+    }
+
+    T first_coord_greater_than(size_t b, size_t e, int axis, T v0) const {
+        for (size_t i = b; i < e; ++i) {
+            const T v = coord_of(points_storage[i], axis);
+            if (v > v0) return v;
+        }
+        return v0; // caller must check v0 != max_coord first
+    }
+
+    T choose_integer_cut_weighted(
+        size_t b, size_t e,
+        int axis,
+        long long mass
+    ) const {
+        // Assumes [b,e) is already sorted by coord(axis)
+        const T min_c = first_coord(b, axis);
+        const long long target = (mass + 1) / 2;
+
+        long long sum = 0;
+
+        // Iterate by blocks of equal coordinate
+        for (size_t i = b; i < e; ) {
+            const T v = coord_of(points_storage[i], axis);
+
+            long long block_mass = 0;
+            size_t j = i;
+            while (j < e && coord_of(points_storage[j], axis) == v) {
+                block_mass += (long long)points_storage[j].second;
+                ++j;
+            }
+
+            // cut = v means left is coord < v, so require v > min_c to ensure non-empty left.
+            if (sum + block_mass >= target && v > min_c) {
+                return v;
+            }
+
+            sum += block_mass;
+            i = j;
+        }
+
+        // If we never crossed target at a v>min_c, fall back to the first coord > min_c.
+        // Caller should have checked min_c != max_c, so this exists.
+        return first_coord_greater_than(b, e, axis, min_c);
+    }
+
+    size_t lower_bound_coord(size_t b, size_t e, int axis, T cut) const {
+        // Assumes [b,e) sorted by coord(axis). Returns first idx with coord >= cut.
+        size_t i = b;
+        while (i < e && coord_of(points_storage[i], axis) < cut) ++i;
+        return i;
+    }
+
+    void carve_child_bounds(
+        const Bounds<T>& parent,
+        int axis,
+        T cut,
+        Bounds<T>& L,
+        Bounds<T>& R
+    ) const {
+        L = parent;
+        R = parent;
+
+        if (axis == 0) {
+            if constexpr (std::is_integral<T>::value) {
+                L.max_x = cut - 1;
+                R.min_x = cut;
+            } else {
+                L.max_x = cut;
+                R.min_x = cut;
+            }
+        } else {
+            if constexpr (std::is_integral<T>::value) {
+                L.max_y = cut - 1;
+                R.min_y = cut;
+            } else {
+                L.max_y = cut;
+                R.min_y = cut;
+            }
+        }
+    }
+
+    void make_leaf(KDNode<T>* node, size_t b, size_t e) const {
+        node->is_leaf = true;
+        node->points.assign(points_storage.begin() + b, points_storage.begin() + e);
+    }
+
     std::unique_ptr<KDNode<T>> buildIterative(Bounds<T> root_bounds) {
-        // all points are already in points_storage
-        //
         struct Task { KDNode<T>* node; int depth; Bounds<T> bounds; size_t b, e; };
         std::vector<Task> stack;
 
         auto root = std::make_unique<KDNode<T>>();
-        root->bounds   = root_bounds;
+        root->bounds    = root_bounds;
         root->begin_idx = 0;
         root->end_idx   = points_storage.size();
-        root->is_leaf = false;
+        root->is_leaf   = false;
 
         stack.reserve(256);
-
         stack.push_back({root.get(), 0, root_bounds, 0, points_storage.size()});
 
         while (!stack.empty()) {
             auto [node, depth, bounds, b, e] = stack.back();
             stack.pop_back();
 
-            size_t cnt = e - b;
+            const size_t cnt = e - b;
+            if (cnt == 0) {
+                make_leaf(node, b, e);
+                continue;
+            }
 
-            bool degenerate = (bounds.max_x - bounds.min_x < 1e-8)
-                           || (bounds.max_y - bounds.min_y < 1e-8);
+            const bool degenerate = is_degenerate_bounds(bounds);
+            const long long mass = range_mass(b, e);
 
-            if (cnt <= size_t(min_points) || degenerate) {
-                node->is_leaf = true;
-                // copy exactly this node’s range into the leaf’s points vector:
-                node->points.assign(
-                    points_storage.begin() + b,
-                    points_storage.begin() + e
-                );
+            if (degenerate || mass <= (long long)min_points) {
+                make_leaf(node, b, e);
                 continue;
             }
 
             int axis = depth % 2;
             node->split_dim = axis;
 
-            size_t median_idx = b + cnt / 2;
-            auto comp = [axis](const auto& A, const auto& B) {
-                return (axis == 0 ? A.first.x < B.first.x : A.first.y < B.first.y);
-            };
-            std::nth_element(points_storage.begin() + b,
-                             points_storage.begin() + median_idx,
-                             points_storage.begin() + e,
-                             comp);
-            T split_val = (axis == 0 ? points_storage[median_idx].first.x : points_storage[median_idx].first.y);
-            node->split_val = split_val;
+            T min_c{}, max_c{};
 
-            auto partition_predicate = [axis, split_val](const auto& p) {
-                return (axis == 0 ? p.first.x : p.first.y) < split_val;
+            auto prepare_axis = [&](int ax) -> bool {
+                sort_range_by_axis(b, e, ax);
+                min_c = first_coord(b, ax);
+                max_c = last_coord(e, ax);
+                if (min_c == max_c) return false;
+                axis = ax;
+                node->split_dim = ax;
+                return true;
             };
-            auto partition_it = std::partition(points_storage.begin() + b, points_storage.begin() + e, partition_predicate);
-            size_t mid = std::distance(points_storage.begin(), partition_it);
 
+            if (!prepare_axis(axis)) {
+                const int other = 1 - axis;
+                if (!prepare_axis(other)) {
+                    make_leaf(node, b, e);
+                    continue;
+                }
+            }
+
+            const T cut = choose_integer_cut_weighted(b, e, axis, mass);
+            node->split_val = cut;
+
+            const size_t mid = lower_bound_coord(b, e, axis, cut);
 
             if (mid == b || mid == e) {
-                node->is_leaf = true;
+                make_leaf(node, b, e);
                 continue;
             }
 
-            // carve child bounds
-            Bounds<T> L = bounds, R = bounds;
-            if (axis == 0) {
-                if (std::is_integral<T>::value) {
-                    L.max_x = split_val - 1;
-                    R.min_x = split_val;
-                } else {
-                    L.max_x = split_val;
-                    R.min_x = split_val;
-                }
-            } else { // axis == 1
-                if (std::is_integral<T>::value) {
-                    L.max_y = split_val - 1;
-                    R.min_y = split_val;
-                } else {
-                    L.max_y = split_val;
-                    R.min_y = split_val;
-                }
-            }
+            Bounds<T> L, R;
+            carve_child_bounds(bounds, axis, cut, L, R);
 
-            // allocate children & assign their ranges
             node->left  = std::make_unique<KDNode<T>>();
             node->left->bounds    = L;
             node->left->begin_idx = b;
             node->left->end_idx   = mid;
+
             node->right = std::make_unique<KDNode<T>>();
             node->right->bounds    = R;
             node->right->begin_idx = mid;
             node->right->end_idx   = e;
 
-            // schedule deeper splits
-            stack.push_back({node->right.get(), depth+1, R,    mid, e});
-            stack.push_back({node->left.get(),  depth+1, L,    b,   mid});
+            stack.push_back({node->right.get(), depth + 1, R, mid, e});
+            stack.push_back({node->left.get(),  depth + 1, L, b,   mid});
         }
+
         return root;
+    }
+
+    // double leaf_null_mass(const KDNode<T>& node) const {
+    //     if constexpr (std::is_integral<T>::value) {
+    //         double q = 0.0;
+
+    //         for (const auto& pr : node.points) {
+    //             const int x = pr.first.x;
+    //             const int y = pr.first.y;
+
+    //             const double px = copula->cdf_x(x) - copula->cdf_x(x - 1);
+    //             const double py = copula->cdf_y(y) - copula->cdf_y(y - 1);
+
+    //             q += px * py;
+    //         }
+
+    //         return std::max(q, 1e-300);
+    //     } else {
+    //         const double root_area_u = compute_root_area_u();
+    //         const double a = get_bin_area(node);
+    //         return std::max(a / root_area_u, 1e-300);
+    //     }
+    // }
+
+    double leaf_rect_null_mass(const KDNode<T>& node) const {
+        if constexpr (std::is_integral<T>::value) {
+            const int lo_x = node.bounds.min_x - 1;
+            const int lo_y = node.bounds.min_y - 1;
+
+            double x_min = copula->cdf_x(lo_x);
+            double y_min = copula->cdf_y(lo_y);
+
+            double x_max = copula->cdf_x(node.bounds.max_x);
+            double y_max = copula->cdf_y(node.bounds.max_y);
+
+            auto clamp01 = [](double u) {
+                if (u < 0.0) return 0.0;
+                if (u > 1.0) return 1.0;
+                return u;
+            };
+
+            x_min = clamp01(x_min);
+            y_min = clamp01(y_min);
+            x_max = clamp01(x_max);
+            y_max = clamp01(y_max);
+
+            return std::max((x_max - x_min) * (y_max - y_min), 1e-300);
+        } else {
+            const double root_area_u = compute_root_area_u();
+            return std::max(get_bin_area(node) / root_area_u, 1e-300);
+        }
     }
 
     // Can I make the underlying storage here an eigen vector, and then just
@@ -491,42 +713,50 @@ class KDTree {
                (static_cast<double>(total_count) * bin_area);
     }
 
-    void traverse_and_compute(const KDNode<T>* node, double& mi,
-                              double& area, double& chi2) const {
+    void traverse_and_compute(const KDNode<T>* node,
+                              const double root_area_u,
+                              double& mi,
+                              double& area,
+                              double& chi2) const {
         if (!node) return;
 
         if (node->is_leaf) {
-            int bin_count = node->total_counts();
+            const int bin_count = node->total_counts();
             if (bin_count == 0) return;
 
-            double bin_area = this->get_bin_area(*node);
+            const double p = static_cast<double>(bin_count) / static_cast<double>(total_count);
 
-            const double epsilon = 1e-12;
-
-            double log_p_xy;
             if (mode_ == MiMode::Raw) {
-                log_p_xy = std::log(bin_count) - std::log(total_count);
-            } else {
-                double bin_area = this->get_bin_area(*node);
-                log_p_xy = std::log(bin_count) - std::log(total_count) - std::log(bin_area + epsilon);
+                const double log_p = std::log(p);
+                mi += p * log_p;
+                return;
             }
 
-            // Accumulate mutual information contribution from this leaf
-            mi += (static_cast<double>(bin_count) / total_count) * log_p_xy;
+            const double q = leaf_rect_null_mass(*node);
+            mi += p * (std::log(p) - std::log(q));
 
-            area += bin_area;
-
-            double expected_count = static_cast<double>(total_count) * bin_area;
-            if (expected_count > 0) {
-                double diff = static_cast<double>(bin_count) - expected_count;
+            const double expected_count = static_cast<double>(total_count) * q;
+            if (expected_count > 0.0) {
+                const double diff = static_cast<double>(bin_count) - expected_count;
                 chi2 += diff * diff / expected_count;
             }
 
             return;
         }
 
-        traverse_and_compute(node->left.get(), mi, area, chi2);
-        traverse_and_compute(node->right.get(), mi, area, chi2);
+        traverse_and_compute(node->left.get(),  root_area_u, mi, area, chi2);
+        traverse_and_compute(node->right.get(), root_area_u, mi, area, chi2);
+    }
+
+    bool point_in_root_bounds(const Point<T>& p) const {
+        const auto& b = root->bounds;
+        if constexpr (std::is_integral<T>::value) {
+            return (p.x >= b.min_x && p.x <= b.max_x &&
+                    p.y >= b.min_y && p.y <= b.max_y);
+        } else {
+            return (p.x >= b.min_x && p.x <= b.max_x &&
+                    p.y >= b.min_y && p.y <= b.max_y);
+        }
     }
 };
 
@@ -734,21 +964,28 @@ double KDTree<T>::get_bin_area(const KDNode<T>& node) const {
     return node.get_bin_area();
 }
 
-
 template <>
 double KDTree<int>::get_bin_area(const KDNode<int>& node) const {
-    // lower CDF edge = F(k-1), but clamp at zero
-    int lo_x = node.bounds.min_x - 1;
-    int lo_y = node.bounds.min_y - 1;
-    double x_min = (lo_x >= 0 ? copula->cdf_x(lo_x) : 0.0);
-    double y_min = (lo_y >= 0 ? copula->cdf_y(lo_y) : 0.0);
+    const int lo_x = node.bounds.min_x - 1;
+    const int lo_y = node.bounds.min_y - 1;
 
-    // upper edge always = F(k)
+    double x_min = copula->cdf_x(lo_x);
+    double y_min = copula->cdf_y(lo_y);
+
     double x_max = copula->cdf_x(node.bounds.max_x);
     double y_max = copula->cdf_y(node.bounds.max_y);
 
-    double width  = x_max - x_min;
-    double height = y_max - y_min;
+    auto clamp01 = [](double u) {
+        if (u < 0.0) return 0.0;
+        if (u > 1.0) return 1.0;
+        return u;
+    };
+
+    x_min = clamp01(x_min); y_min = clamp01(y_min);
+    x_max = clamp01(x_max); y_max = clamp01(y_max);
+
+    const double width  = x_max - x_min;
+    const double height = y_max - y_min;
     return width * height;
 }
 
@@ -815,4 +1052,84 @@ void KDTree<T>::dumpSplittingValuesHelper(const KDNode<T>* node, std::ofstream &
     // Recursively dump left and right subtrees.
     dumpSplittingValuesHelper(node->left.get(), out, depth + 1);
     dumpSplittingValuesHelper(node->right.get(), out, depth + 1);
+}
+
+template <typename T>
+template <class InputIt>
+std::pair<double, int> KDTree<T>::chi2_holdout(
+    InputIt first, InputIt last, int n_test, double min_expected
+) const {
+    if (!leaf_cache_ready) build_leaf_cache();
+
+    const int L = static_cast<int>(leaf_nodes.size());
+    if (L <= 0 || n_test <= 0) return {0.0, 0};
+
+    std::vector<int> obs(L, 0);
+    int obs_oob = 0;
+
+    for (auto it = first; it != last; ++it) {
+        const Point<T> p = *it;
+
+        if (!point_in_root_bounds(p)) {
+            obs_oob += 1;
+            continue;
+        }
+
+        const int id = locate_leaf_id(p);
+        if (id >= 0) obs[id] += 1;
+    }
+
+    double chi2 = 0.0;
+    long long O_small = 0;
+    double E_small = 0.0;
+    int bins_kept = 0;
+
+    for (int l = 0; l < L; ++l) {
+        const double E = static_cast<double>(n_test) * leaf_prob[l];
+        const double O = static_cast<double>(obs[l]);
+
+        if (!(E > 0.0)) continue;
+
+        if (E < min_expected) {
+            O_small += obs[l];
+            E_small += E;
+        } else {
+            const double d = O - E;
+            chi2 += d * d / E;
+            bins_kept += 1;
+        }
+    }
+
+    const double q_oob = std::max(0.0, 1.0 - leaf_mass_total);
+    const double E_oob = static_cast<double>(n_test) * q_oob;
+    const double O_oob = static_cast<double>(obs_oob);
+
+    if (E_oob > 0.0) {
+        if (E_oob < min_expected) {
+            O_small += obs_oob;
+            E_small += E_oob;
+        } else {
+            const double d = O_oob - E_oob;
+            chi2 += d * d / E_oob;
+            bins_kept += 1;
+        }
+    }
+
+    if (E_small > 0.0) {
+        const double d = static_cast<double>(O_small) - E_small;
+        chi2 += d * d / E_small;
+        bins_kept += 1;
+    }
+
+    // std::cerr << "L=" << L
+    //           << " bins_kept=" << bins_kept
+    //           << " leaf_mass_total=" << leaf_mass_total
+    //           << " obs_oob=" << obs_oob
+    //           << " E_oob=" << E_oob
+    //           << " chi2=" << chi2
+    //           << " df=" << ((bins_kept > 0) ? (bins_kept - 1) : 0)
+    //           << std::endl;
+
+    const int df = (bins_kept > 0) ? (bins_kept - 1) : 0;
+    return {chi2, df};
 }

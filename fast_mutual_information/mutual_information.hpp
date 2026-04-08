@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <Eigen/Sparse>
 #include <cstdint>
+#include <random>
 
 #include "copula.hpp"
 #include "fast_negative_binomial/fast_nb.hpp"
@@ -18,6 +19,219 @@
 // Set up with a class, configure, then run MI calculation
 // TODO: Take Eigen vectors of means and variances
 //       This is also quite a chunky file, maybe split it up.
+
+void init_parallel()
+{
+    omp_set_dynamic(0);
+
+    Eigen::initParallel();
+    Eigen::setNbThreads(1);
+}
+
+inline void make_twofold_split_indices(int n, uint64_t seed, Eigen::VectorXi& idxA, Eigen::VectorXi& idxB) {
+    Eigen::VectorXi perm(n);
+    for (int i = 0; i < n; ++i) perm(i) = i;
+
+    std::mt19937_64 rng(seed);
+    std::shuffle(perm.data(), perm.data() + n, rng);
+
+    const int nA = n / 2;
+    idxA = perm.head(nA);
+    idxB = perm.tail(n - nA);
+}
+
+template<typename Vec>
+struct IndexedPointIter {
+    using Scalar = typename Vec::Scalar;
+    using iterator_category = std::random_access_iterator_tag;
+    using value_type = Point<Scalar>;
+    using difference_type = std::ptrdiff_t;
+    using reference = value_type;
+
+    const Vec* x = nullptr;
+    const Vec* y = nullptr;
+    const int* idx = nullptr;
+    int pos = 0;
+
+    value_type operator*() const {
+        const int i = idx[pos];
+        return value_type{(*x)(i), (*y)(i)};
+    }
+
+    IndexedPointIter& operator++() { ++pos; return *this; }
+    IndexedPointIter& operator--() { --pos; return *this; }
+
+    IndexedPointIter operator+(difference_type d) const { return {x, y, idx, pos + static_cast<int>(d)}; }
+    IndexedPointIter operator-(difference_type d) const { return {x, y, idx, pos - static_cast<int>(d)}; }
+    difference_type operator-(const IndexedPointIter& o) const { return static_cast<difference_type>(pos - o.pos); }
+
+    bool operator==(const IndexedPointIter& o) const { return pos == o.pos; }
+    bool operator!=(const IndexedPointIter& o) const { return pos != o.pos; }
+    bool operator<(const IndexedPointIter& o) const { return pos < o.pos; }
+};
+
+template<typename Vec>
+struct IndexedPointRange {
+    const Vec* x = nullptr;
+    const Vec* y = nullptr;
+    const Eigen::VectorXi* idx = nullptr;
+
+    auto begin() const { return IndexedPointIter<Vec>{x, y, idx->data(), 0}; }
+    auto end() const {
+        return IndexedPointIter<Vec>{x, y, idx->data(), static_cast<int>(idx->size())};
+    }
+    int size() const { return idx->size(); }
+};
+
+struct EmpiricalCdf1D {
+    int min_k = 0;
+    int max_k = -1;
+    std::vector<double> F;
+
+    double operator()(int k) const {
+        if (max_k < min_k) return 0.0;
+        if (k < min_k) return 0.0;
+        if (k >= max_k) return 1.0;
+        return F[static_cast<size_t>(k - min_k)];
+    }
+};
+
+inline EmpiricalCdf1D build_empirical_cdf_lookup(
+    const Eigen::VectorXi& x,
+    double pseudocount = 0.5
+) {
+    EmpiricalCdf1D out;
+    if (x.size() == 0) return out;
+
+    const int min_k = x.minCoeff();
+    const int max_k = x.maxCoeff();
+    const int K = max_k - min_k + 1;
+
+    out.min_k = min_k;
+    out.max_k = max_k;
+    out.F.resize(static_cast<size_t>(K));
+
+    std::vector<double> hist(static_cast<size_t>(K), 0.0);
+    for (int i = 0; i < x.size(); ++i) {
+        hist[static_cast<size_t>(x(i) - min_k)] += 1.0;
+    }
+
+    const double denom =
+        static_cast<double>(x.size()) + pseudocount * static_cast<double>(K);
+
+    double sum = 0.0;
+    for (int j = 0; j < K; ++j) {
+        sum += (hist[static_cast<size_t>(j)] + pseudocount) / denom;
+        out.F[static_cast<size_t>(j)] = sum;
+    }
+
+    out.F.back() = 1.0;
+    return out;
+}
+
+inline EmpiricalCdf1D build_empirical_cdf_lookup_subset(
+    const Eigen::Ref<const Eigen::VectorXi>& x,
+    const Eigen::VectorXi& idx,
+    double pseudocount = 0.5
+) {
+    Eigen::VectorXi sub(idx.size());
+    for (int t = 0; t < idx.size(); ++t) sub(t) = x(idx(t));
+    return build_empirical_cdf_lookup(sub, pseudocount);
+}
+
+// inline std::pair<double, int> crossfit_chi2_twofold_empirical(
+//     const Eigen::Ref<const Eigen::VectorXi>& x,
+//     const Eigen::Ref<const Eigen::VectorXi>& y,
+//     int min_pop,
+//     const Eigen::VectorXi& idxA,
+//     const Eigen::VectorXi& idxB,
+//     double min_expected = 5.0,
+//     double pseudocount = 0.5
+// ) {
+//     const Eigen::VectorXi x_copy = x;
+//     const Eigen::VectorXi y_copy = y;
+
+//     IndexedPointRange<Eigen::VectorXi> A{&x_copy, &y_copy, &idxA};
+//     IndexedPointRange<Eigen::VectorXi> B{&x_copy, &y_copy, &idxB};
+
+//     const auto FxA = build_empirical_cdf_lookup_subset(x, idxA, pseudocount);
+//     const auto FyA = build_empirical_cdf_lookup_subset(y, idxA, pseudocount);
+
+//     Copula<int> copA;
+//     copA.cdf_x = [FxA](int k) -> double { return FxA(k); };
+//     copA.cdf_y = [FyA](int k) -> double { return FyA(k); };
+
+//     KDTree<int> treeA(A.begin(), A.end(), &copA, min_pop);
+//     auto [chi2_ab, df_ab] = treeA.chi2_holdout(B.begin(), B.end(), B.size(), min_expected);
+
+//     const auto FxB = build_empirical_cdf_lookup_subset(x, idxB, pseudocount);
+//     const auto FyB = build_empirical_cdf_lookup_subset(y, idxB, pseudocount);
+
+//     Copula<int> copB;
+//     copB.cdf_x = [FxB](int k) -> double { return FxB(k); };
+//     copB.cdf_y = [FyB](int k) -> double { return FyB(k); };
+
+//     KDTree<int> treeB(B.begin(), B.end(), &copB, min_pop);
+//     auto [chi2_ba, df_ba] = treeB.chi2_holdout(A.begin(), A.end(), A.size(), min_expected);
+
+//     return {chi2_ab + chi2_ba, df_ab + df_ba};
+// }
+
+inline std::pair<double, int> crossfit_chi2_twofold_empirical(
+    const Eigen::Ref<const Eigen::VectorXi>& x,
+    const Eigen::Ref<const Eigen::VectorXi>& y,
+    int min_pop,
+    const Eigen::VectorXi& idxA,
+    const Eigen::VectorXi& idxB,
+    double min_expected = 5.0,
+    double pseudocount = 0.5
+) {
+    const Eigen::VectorXi x_copy = x;
+    const Eigen::VectorXi y_copy = y;
+
+    IndexedPointRange<Eigen::VectorXi> A{&x_copy, &y_copy, &idxA};
+    IndexedPointRange<Eigen::VectorXi> B{&x_copy, &y_copy, &idxB};
+
+    const auto Fx = build_empirical_cdf_lookup(x_copy, pseudocount);
+    const auto Fy = build_empirical_cdf_lookup(y_copy, pseudocount);
+
+    Copula<int> cop;
+    cop.cdf_x = [Fx](int k) -> double { return Fx(k); };
+    cop.cdf_y = [Fy](int k) -> double { return Fy(k); };
+
+    KDTree<int> treeA(A.begin(), A.end(), &cop, min_pop);
+    auto [chi2_ab, df_ab] = treeA.chi2_holdout(B.begin(), B.end(), B.size(), min_expected);
+
+    KDTree<int> treeB(B.begin(), B.end(), &cop, min_pop);
+    auto [chi2_ba, df_ba] = treeB.chi2_holdout(A.begin(), A.end(), A.size(), min_expected);
+
+    return {chi2_ab + chi2_ba, df_ab + df_ba};
+}
+
+template<typename Vec>
+inline std::pair<double, int> crossfit_chi2_twofold(
+    const Vec& x,
+    const Vec& y,
+    Copula<typename Vec::Scalar>* copula,
+    int min_pop,
+    const Eigen::VectorXi& idxA,
+    const Eigen::VectorXi& idxB,
+    double min_expected = 5.0
+) {
+    IndexedPointRange<Vec> A{&x, &y, &idxA};
+    IndexedPointRange<Vec> B{&x, &y, &idxB};
+
+    KDTree<typename Vec::Scalar> treeA(A.begin(), A.end(), copula, min_pop);
+    auto [chi2_ab, df_ab] = treeA.chi2_holdout(B.begin(), B.end(), B.size(), min_expected);
+
+    KDTree<typename Vec::Scalar> treeB(B.begin(), B.end(), copula, min_pop);
+    auto [chi2_ba, df_ba] = treeB.chi2_holdout(A.begin(), A.end(), A.size(), min_expected);
+
+    // std::cout << chi2_ab << " " <<  chi2_ba << std::endl;
+    // std::cout << df_ab << " " <<  df_ba << std::endl;
+
+    return {chi2_ab + chi2_ba, df_ab + df_ba};
+}
 
 template <typename T>
 class MutualInformation {
@@ -36,8 +250,8 @@ class MutualInformation {
                       int nPoints, Bounds<int> bounds, int max_points_per_leaf, bool zi = false);
 
     template<typename ColVec>
-    MutualInformation(const PointView<ColVec>& data, int min_pop = 10)
-      : zi(false)
+    MutualInformation(const PointView<ColVec>& data, int min_pop = 10, bool zi = false)
+      : zi(zi)
     {
         this->copula = new Copula<T>();
         setData(data, min_pop);
@@ -86,20 +300,20 @@ class MutualInformation {
     void setNormalPMF(double mean1, double std_dev1, double mean2,
                       double std_dev2) {
         this->copula->p_x = [mean1, std_dev1](double x) -> double {
-            return normal_pdf(x, mean1, std_dev1);
+            return normal_pmf_discrete(x, mean1, std_dev1);
         };
         this->copula->p_y = [mean2, std_dev2](double y) -> double {
-            return normal_pdf(y, mean2, std_dev2);
+            return normal_pmf_discrete(y, mean2, std_dev2);
         };
     }
 
     void setNormalCDF(double mean1, double std_dev1, double mean2,
                       double std_dev2) {
         this->copula->cdf_x = [mean1, std_dev1](double x) -> double {
-            return normal_cdf(x, mean1, std_dev1);
+            return normal_cdf_discrete(x, mean1, std_dev1);
         };
         this->copula->cdf_y = [mean2, std_dev2](double y) -> double {
-            return normal_cdf(y, mean2, std_dev2);
+            return normal_cdf_discrete(y, mean2, std_dev2);
         };
     }
 
@@ -140,11 +354,27 @@ class MutualInformation {
         return tree.compute_mutual_information();
     }
 
+    void set_exposure(const Eigen::VectorXd& exposure) {
+        exposure_vec = exposure;
+        use_offsets = true;
+    }
+
+    void clear_exposure() {
+        exposure_vec.resize(0);
+        use_offsets = false;
+    }
+
+    void dumpTreeToCSV(const std::string& filename) const {
+        tree.dumpSplittingValuesToCSV(filename);
+    }
+
     Copula<T>* copula;
 
    private:
     KDTree<T> tree;
     bool zi = false;
+    Eigen::VectorXd exposure_vec;
+    bool use_offsets = false;
 
 };
 
@@ -201,6 +431,53 @@ std::vector<std::pair<int, int>> sort_pairs(const std::vector<int>& x, const std
 std::vector<int> eigenVectorToStdVector(const Eigen::VectorXi &eigen_vec) {
     // Use the pointer to the first element and the pointer past the last element.
     return std::vector<int>(eigen_vec.data(), eigen_vec.data() + eigen_vec.size());
+}
+
+// Build F_mix[0..Kmax] where F_mix(k) = mean_j F_NB(k; mu0*e_j, r), use for exposure/offset correction
+// counts_col is used only to get Kmax cheaply (max count in this feature).
+// Averaging over cells: F_mix(k) = mean_j F_NB(k; mu0 * exposure[j], r)
+inline std::vector<double> build_nb_mixture_cdf_lookup(
+    const Eigen::VectorXi& counts_col,
+    double mu0,
+    double r,
+    const Eigen::VectorXd& exposure
+) {
+    const int n = static_cast<int>(counts_col.size());
+    const int Kmax = counts_col.maxCoeff();
+
+    std::vector<double> F(Kmax + 1);
+    Eigen::VectorXi kvec(n);
+
+    for (int k = 0; k <= Kmax; ++k) {
+        kvec.setConstant(k);
+        // uses the exposure-aware, block-parallel, no-sort vector CDF
+        Eigen::VectorXd cdf_k = nb2_cdf_vec_eigen_exposure(kvec, mu0, r, exposure);
+        F[k] = cdf_k.mean();
+    }
+    return F;
+}
+
+// ZINB mixture: F_mix(k) = mean_j [ alpha + (1-alpha) * F_NB(k; mu0 * exposure[j], r) ]
+// Not currently plumbed in!
+inline std::vector<double> build_zinb_mixture_cdf_lookup(
+    const Eigen::VectorXi& counts_col,
+    double mu0,
+    double r,
+    double alpha,
+    const Eigen::VectorXd& exposure
+) {
+    const int n = static_cast<int>(counts_col.size());
+    const int Kmax = counts_col.maxCoeff();
+
+    std::vector<double> F(Kmax + 1);
+    Eigen::VectorXi kvec(n);
+
+    for (int k = 0; k <= Kmax; ++k) {
+        kvec.setConstant(k);
+        Eigen::VectorXd cdf_k = zinb2_cdf_vec_eigen_exposure(kvec, mu0, r, alpha, exposure);
+        F[k] = cdf_k.mean();
+    }
+    return F;
 }
 
 float mutual_information_ml(const Eigen::VectorXi &x, const Eigen::VectorXi &y) {
@@ -348,12 +625,14 @@ std::pair<double, double>  mutual_information_quantised(double mean1, double std
                                      point_samples, min_pop);
 }
 
+
 // Without RLE, 3
 std::pair<double, double> mutual_information_nb(double mean1, double conc1, double mean2,
                              double conc2, std::vector<Point<int>>& data,
                              int min_pop = 25) {
-    auto cdf_x = [=](int x) -> double { return nb2_cdf_single(x, mean1, conc1); };
-    auto cdf_y = [=](int y) -> double { return nb2_cdf_single(y, mean2, conc2); };
+
+    auto cdf_x = [=](int x) -> double { return (x < 0) ? 0.0 : nb2_cdf_single(x, mean1, conc1); };
+    auto cdf_y = [=](int y) -> double { return (y < 0) ? 0.0 : nb2_cdf_single(y, mean2, conc2); };
 
     MutualInformation<int> mi(data, min_pop);
     mi.setCDF(cdf_x, cdf_y);
@@ -365,8 +644,8 @@ std::pair<double, double> mutual_information_nb(double mean1, double conc1, doub
 std::pair<double, double> mutual_information_zinb(double mean1, double conc1, double alpha1, double mean2,
                              double conc2, double alpha2, std::vector<Point<int>>& data,
                              int min_pop = 25) {
-    auto cdf_x = [=](int x) -> double { return zinb2_cdf_single(x, mean1, conc1, alpha1); };
-    auto cdf_y = [=](int y) -> double { return zinb2_cdf_single(y, mean2, conc2, alpha2); };
+    auto cdf_x = [=](int x) -> double { return (x < 0) ? 0.0 : zinb2_cdf_single(x, mean1, conc1, alpha1); };
+    auto cdf_y = [=](int y) -> double { return (y < 0) ? 0.0 : zinb2_cdf_single(y, mean2, conc2, alpha2); };
 
     MutualInformation<int> mi(data, min_pop, true);
     mi.setCDF(cdf_x, cdf_y);
@@ -397,14 +676,46 @@ std::pair<double, double>  mutual_information_zinb(double mean1, double conc1, d
                                  min_pop);
 }
 
+int
+mutual_information_zinb_dump_first_tree(Eigen::MatrixXi& samples,
+                                       Eigen::VectorXd means,
+                                       Eigen::VectorXd concs,
+                                       Eigen::VectorXd alphas,
+                                       const std::string& csv_filename,
+                                       int min_pop = 25) {
+    const int F = samples.cols();
+
+    // Compute (0,1) sequentially so we can dump its tree once.
+    if (F >= 2) {
+        PointView pv01(samples.col(0), samples.col(1));
+        MutualInformation<int> mi01(pv01, min_pop, true);
+
+        auto cdf_x = [=](int x) -> double {
+            return (x < 0) ? 0.0 : zinb2_cdf_single(x, means(0), concs(0), alphas(0));
+        };
+        auto cdf_y = [=](int y) -> double {
+            return (y < 0) ? 0.0 : zinb2_cdf_single(y, means(1), concs(1), alphas(1));
+        };
+
+        mi01.setCDF(cdf_x, cdf_y);
+
+        (void)mi01.mutual_information();
+        mi01.dumpTreeToCSV(csv_filename);
+    }
+
+    return 0;
+}
+
+
 // Mutual information with NB distributed marginals, RLE
 std::pair<double, double> mutual_information_nb(double mean1, double conc1, double mean2,
                              double conc2,
                              std::vector<std::pair<Point<int>, int>>& data,
                              int nPoints, Bounds<int> bounds,
                              int min_pop = 10) {
-    auto cdf_x = [=](int x) -> double { return nb2_cdf_single(x, mean1, conc1); };
-    auto cdf_y = [=](int y) -> double { return nb2_cdf_single(y, mean2, conc2); };
+
+    auto cdf_x = [=](int x) -> double { return (x < 0) ? 0.0 : nb2_cdf_single(x, mean1, conc1); };
+    auto cdf_y = [=](int y) -> double { return (y < 0) ? 0.0 : nb2_cdf_single(y, mean2, conc2); };
 
     MutualInformation<int> mi(data, nPoints, bounds, min_pop);
     mi.setCDF(cdf_x, cdf_y);
@@ -431,11 +742,13 @@ const Eigen::VectorXd& means,
 const Eigen::VectorXd& std_devs,
 int min_pop = 25) {
 
+    init_parallel();
+
     const int F = samples.cols();
     Eigen::MatrixXd mi   = Eigen::MatrixXd::Zero(F, F);
     Eigen::MatrixXd chi2 = Eigen::MatrixXd::Zero(F, F);
 
-#pragma omp parallel for
+#pragma omp parallel for schedule(dynamic,1)
     for (int i = 0; i < samples.cols(); i++) {
         for (int j = i + 1; j < samples.cols(); j++) {
             auto f1 = samples.col(i);
@@ -460,7 +773,7 @@ int min_pop = 25) {
 //     Eigen::MatrixXd mi(samples.cols(), samples.cols());
 //     Eigen::MatrixXd chi2(samples.cols(), samples.cols());
 
-// #pragma omp parallel for
+// #pragma omp parallel for schedule(dynamic,1)
 //     for (int i = 0; i < samples.cols(); i++) {
 //         for (int j = i + 1; j < samples.cols(); j++) {
 //             // Cast to double so we can use the same point quantisation class,
@@ -484,11 +797,13 @@ Eigen::VectorXd means,
 Eigen::VectorXd std_devs,
 int min_pop = 25) {
 
+    init_parallel();
+
     const int F = samples.cols();
     Eigen::MatrixXd mi   = Eigen::MatrixXd::Zero(F, F);
     Eigen::MatrixXd chi2 = Eigen::MatrixXd::Zero(F, F);
 
-#pragma omp parallel for
+#pragma omp parallel for schedule(dynamic,1)
     for (int i = 0; i < samples.cols(); i++) {
         for (int j = i + 1; j < samples.cols(); j++) {
 
@@ -513,11 +828,13 @@ Eigen::VectorXd means,
 Eigen::VectorXd std_devs,
 int min_pop = 25) {
 
+    init_parallel();
+
     const int F = samples.cols();
     Eigen::MatrixXd mi   = Eigen::MatrixXd::Zero(F, F);
     Eigen::MatrixXd chi2 = Eigen::MatrixXd::Zero(F, F);
 
-#pragma omp parallel for
+#pragma omp parallel for schedule(dynamic,1)
     for (int i = 0; i < samples.cols(); i++) {
         for (int j = i + 1; j < samples.cols(); j++) {
 
@@ -537,20 +854,28 @@ int min_pop = 25) {
     return {mi, chi2};
 }
 
-std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_nb(Eigen::MatrixXi& samples,
-Eigen::VectorXd means,
-Eigen::VectorXd concs,
+std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_nb(
+const Eigen::Ref<const Eigen::MatrixXi>& samples,
+const Eigen::Ref<const Eigen::VectorXd>& means,
+const Eigen::Ref<const Eigen::VectorXd>& concs,
 int min_pop = 25) {
 
+    init_parallel();
+
     const int F = samples.cols();
-    Eigen::MatrixXd mi   = Eigen::MatrixXd::Zero(F, F);
-    Eigen::MatrixXd chi2 = Eigen::MatrixXd::Zero(F, F);
 
-#pragma omp parallel for
+    Eigen::MatrixXd mi(F, F);
+    Eigen::MatrixXd chi2(F, F);
+
+    mi.triangularView<Eigen::Lower>().setZero();
+    chi2.triangularView<Eigen::Lower>().setZero();
+
+    // std::cout << "Calculating mutual information for negative binomial distribution..." << std::endl;
+
+#pragma omp parallel for schedule(dynamic,1)
     for (int i = 0; i < samples.cols(); i++) {
+        Eigen::VectorXi f1 = samples.col(i);
         for (int j = i + 1; j < samples.cols(); j++) {
-
-            Eigen::VectorXi f1 = samples.col(i);
             Eigen::VectorXi f2 = samples.col(j);
 
             auto [mi_ij, chi2_ij] = mutual_information_nb(means(i), concs(i), means(j), concs(j), f1, f2, min_pop);
@@ -561,20 +886,29 @@ int min_pop = 25) {
         }
     }
 
+    mi.triangularView<Eigen::Lower>().setZero();
+    chi2.triangularView<Eigen::Lower>().setZero();
+
     return {mi, chi2};
 }
 
-std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_zinb(Eigen::MatrixXi& samples,
-Eigen::VectorXd means,
-Eigen::VectorXd concs,
-Eigen::VectorXd alphas,
+std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_zinb(
+    const Eigen::Ref<const Eigen::MatrixXi>& samples,
+    const Eigen::Ref<const Eigen::VectorXd>& means,
+    const Eigen::Ref<const Eigen::VectorXd>& concs,
+    const Eigen::Ref<const Eigen::VectorXd>& alphas,
 int min_pop = 25) {
 
-    const int F = samples.cols();
-    Eigen::MatrixXd mi   = Eigen::MatrixXd::Zero(F, F);
-    Eigen::MatrixXd chi2 = Eigen::MatrixXd::Zero(F, F);
+    init_parallel();
 
-#pragma omp parallel for
+    const int F = samples.cols();
+    Eigen::MatrixXd mi(F, F);
+    Eigen::MatrixXd chi2(F, F);
+
+    mi.triangularView<Eigen::Lower>().setZero();
+    chi2.triangularView<Eigen::Lower>().setZero();
+
+#pragma omp parallel for schedule(dynamic,1)
     for (int i = 0; i < samples.cols(); i++) {
         for (int j = i + 1; j < samples.cols(); j++) {
 
@@ -589,15 +923,21 @@ int min_pop = 25) {
         }
     }
 
+    mi.triangularView<Eigen::Lower>().setZero();
+    chi2.triangularView<Eigen::Lower>().setZero();
+
     return {mi, chi2};
 }
 
 Eigen::MatrixXd mutual_information_ml(Eigen::MatrixXi& samples) {
+
+    init_parallel();
+
     int ncols = samples.cols();
 
     Eigen::MatrixXd results = Eigen::MatrixXd::Zero(ncols, ncols);
 
-    #pragma omp parallel for
+    #pragma omp parallel for schedule(dynamic,1)
     for (int i = 0; i < ncols; i++) {
         for (int j = i + 1; j < ncols; j++) {
             results(i, j) = mutual_information_ml(samples.col(i), samples.col(j));
@@ -654,21 +994,98 @@ double mutual_information_binarised(Eigen::VectorXi f1, Eigen::VectorXi f2) {
 
 Eigen::MatrixXd mutual_information_binarised(Eigen::MatrixXi& samples) {
 
+    init_parallel();
+
     Eigen::MatrixXd results(samples.cols(), samples.cols());
 
-#pragma omp parallel for
+#pragma omp parallel for schedule(dynamic,1)
     for (int i = 0; i < samples.cols(); i++) {
         for (int j = i + 1; j < samples.cols(); j++) {
 
             Eigen::VectorXi f1 = samples.col(i);
             Eigen::VectorXi f2 = samples.col(j);
 
-            // This is overloaded to take two Eigen::VectorXi, rather than a matrix
+            // Overloaded to take two Eigen::VectorXi, rather than a matrix
             results(i, j) = mutual_information_binarised(f1, f2);
         }
     }
 
     return results;
+}
+
+// NEW: pairwise NB with exposures (mu0 on unit exposure)
+std::pair<double, double> mutual_information_nb(
+    double mu0_1, double conc1,
+    double mu0_2, double conc2,
+    const Eigen::VectorXi& f1,
+    const Eigen::VectorXi& f2,
+    const Eigen::VectorXd& exposure,
+    int min_pop = 25
+) {
+
+    std::vector<Point<int>> point_samples = convertSamplesToPoints(f1, f2);
+
+    // Exposure uses a mixture CDF with different effective mean per observation
+
+    // Precompute mixture CDF lookup tables for each axis
+    const auto Fx = build_nb_mixture_cdf_lookup(f1, mu0_1, conc1, exposure);
+    const auto Fy = build_nb_mixture_cdf_lookup(f2, mu0_2, conc2, exposure);
+
+    // Lambdas map integer k -> mixture CDF via table (safe for k in [0..Kmax])
+    auto cdf_x = [Fx](int k) -> double {
+        if (k < 0) return 0.0;
+        if (k < static_cast<int>(Fx.size())) return Fx[k];
+        return 1.0; // robust tail clamp
+    };
+    auto cdf_y = [Fy](int k) -> double {
+        if (k < 0) return 0.0;
+        if (k < static_cast<int>(Fy.size())) return Fy[k];
+        return 1.0;
+    };
+
+    MutualInformation<int> mi(point_samples, min_pop, /*zi=*/false);
+    mi.setCDF(cdf_x, cdf_y);
+    return mi.mutual_information();
+}
+
+// all-pairs NB with exposures; 'means' carries mu0 (baseline) per feature
+std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_nb(
+    const Eigen::Ref<const Eigen::MatrixXi>& samples,
+    const Eigen::Ref<const Eigen::VectorXd>& means,
+    const Eigen::Ref<const Eigen::VectorXd>& concs,
+    const Eigen::Ref<const Eigen::VectorXd>& exposure,
+    int min_pop = 25
+) {
+
+    init_parallel();
+
+    const int F = samples.cols();
+    Eigen::MatrixXd mi(F, F);
+    Eigen::MatrixXd chi2(F, F);
+
+    mi.triangularView<Eigen::Lower>().setZero();
+    chi2.triangularView<Eigen::Lower>().setZero();
+
+    #pragma omp parallel for schedule(dynamic,1)
+    for (int i = 0; i < F; ++i) {
+        for (int j = i + 1; j < F; ++j) {
+            const Eigen::VectorXi f1 = samples.col(i);
+            const Eigen::VectorXi f2 = samples.col(j);
+
+            auto result = mutual_information_nb(
+                means(i), concs(i),
+                means(j), concs(j),
+                f1, f2, exposure, min_pop
+            );
+            mi(i, j)   = result.first;
+            chi2(i, j) = result.second;
+        }
+    }
+
+    mi.triangularView<Eigen::Lower>().setZero();
+    chi2.triangularView<Eigen::Lower>().setZero();
+
+    return {mi, chi2};
 }
 
 std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_nb_sparse(
@@ -681,7 +1098,7 @@ std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_nb_sparse(
     Eigen::MatrixXd mi   = Eigen::MatrixXd::Zero(F, F);
     Eigen::MatrixXd chi2 = Eigen::MatrixXd::Zero(F, F);
 
-    #pragma omp parallel for
+    #pragma omp parallel for schedule(dynamic,1)
     for (int i = 0; i < F; ++i) {
         for (int j = i + 1; j < F; ++j) {
 
@@ -699,4 +1116,220 @@ std::pair<Eigen::MatrixXd, Eigen::MatrixXd> mutual_information_nb_sparse(
     }
 
     return {mi, chi2};
+}
+
+std::tuple<Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd>
+mutual_information_normal_crossfit(
+    Eigen::MatrixXi& samples,
+    Eigen::VectorXd means,
+    Eigen::VectorXd std_devs,
+    int min_pop = 25,
+    uint64_t seed = 0,
+    double min_expected = 5.0
+) {
+    init_parallel();
+
+    const int N = samples.rows();
+    const int F = samples.cols();
+
+    Eigen::VectorXi idxA, idxB;
+    make_twofold_split_indices(N, seed, idxA, idxB);
+
+    Eigen::MatrixXd mi   = Eigen::MatrixXd::Zero(F, F);
+    Eigen::MatrixXd chi2 = Eigen::MatrixXd::Zero(F, F);
+    Eigen::MatrixXd df   = Eigen::MatrixXd::Zero(F, F);
+
+    #pragma omp parallel for schedule(dynamic,1)
+    for (int i = 0; i < F; i++) {
+        for (int j = i + 1; j < F; j++) {
+            PointView pv(samples.col(i), samples.col(j));
+            MutualInformation<int> mi_full(pv, min_pop);
+            mi_full.setNormalCopula(means(i), std_devs(i), means(j), std_devs(j));
+
+            const auto [mi_ij, _] = mi_full.mutual_information();
+
+            const auto [chi2_cv, df_cv] = crossfit_chi2_twofold(
+                samples.col(i),
+                samples.col(j),
+                mi_full.copula,
+                min_pop,
+                idxA,
+                idxB,
+                min_expected
+            );
+
+            mi(i, j) = mi_ij;
+            chi2(i, j) = chi2_cv;
+            df(i, j) = static_cast<double>(df_cv);
+        }
+    }
+
+    mi.triangularView<Eigen::Lower>().setZero();
+    chi2.triangularView<Eigen::Lower>().setZero();
+    df.triangularView<Eigen::Lower>().setZero();
+
+    return {mi, chi2, df};
+}
+
+std::tuple<Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd>
+mutual_information_nb_crossfit(
+    const Eigen::Ref<const Eigen::MatrixXi>& samples,
+    const Eigen::Ref<const Eigen::VectorXd>& means,
+    const Eigen::Ref<const Eigen::VectorXd>& concs,
+    int min_pop = 25,
+    std::uint64_t seed = 0,
+    double min_expected = 5.0,
+    bool use_empirical_marginals = false,
+    double empirical_pseudocount = 0.5
+) {
+    init_parallel();
+
+    const int N = samples.rows();
+    const int F = samples.cols();
+
+    Eigen::VectorXi idxA, idxB;
+    make_twofold_split_indices(N, seed, idxA, idxB);
+
+    Eigen::MatrixXd mi   = Eigen::MatrixXd::Zero(F, F);
+    Eigen::MatrixXd chi2 = Eigen::MatrixXd::Zero(F, F);
+    Eigen::MatrixXd df   = Eigen::MatrixXd::Zero(F, F);
+
+    #pragma omp parallel for schedule(dynamic,1)
+    for (int i = 0; i < F; i++) {
+        for (int j = i + 1; j < F; j++) {
+            PointView pv(samples.col(i), samples.col(j));
+            MutualInformation<int> mi_full(pv, min_pop);
+
+            double mi_ij = 0.0;
+            double chi2_cv = 0.0;
+            int df_cv = 0;
+
+            if (use_empirical_marginals) {
+                const auto Fx = build_empirical_cdf_lookup(samples.col(i), empirical_pseudocount);
+                const auto Fy = build_empirical_cdf_lookup(samples.col(j), empirical_pseudocount);
+
+                auto cdf_x = [Fx](int x) -> double { return Fx(x); };
+                auto cdf_y = [Fy](int y) -> double { return Fy(y); };
+
+                mi_full.setCDF(cdf_x, cdf_y);
+                std::tie(mi_ij, std::ignore) = mi_full.mutual_information();
+
+                std::tie(chi2_cv, df_cv) = crossfit_chi2_twofold_empirical(
+                    samples.col(i),
+                    samples.col(j),
+                    min_pop,
+                    idxA,
+                    idxB,
+                    min_expected,
+                    empirical_pseudocount
+                );
+            } else {
+                const double mean1 = means(i);
+                const double conc1 = concs(i);
+                const double mean2 = means(j);
+                const double conc2 = concs(j);
+
+                auto cdf_x = [=](int x) -> double {
+                    return (x < 0) ? 0.0 : nb2_cdf_single(x, mean1, conc1);
+                };
+                auto cdf_y = [=](int y) -> double {
+                    return (y < 0) ? 0.0 : nb2_cdf_single(y, mean2, conc2);
+                };
+
+                mi_full.setCDF(cdf_x, cdf_y);
+                std::tie(mi_ij, std::ignore) = mi_full.mutual_information();
+
+                std::tie(chi2_cv, df_cv) = crossfit_chi2_twofold(
+                    samples.col(i),
+                    samples.col(j),
+                    mi_full.copula,
+                    min_pop,
+                    idxA,
+                    idxB,
+                    min_expected
+                );
+            }
+
+            mi(i, j)   = mi_ij;
+            chi2(i, j) = chi2_cv;
+            df(i, j)   = static_cast<double>(df_cv);
+        }
+    }
+
+    mi.triangularView<Eigen::Lower>().setZero();
+    chi2.triangularView<Eigen::Lower>().setZero();
+    df.triangularView<Eigen::Lower>().setZero();
+
+    return {mi, chi2, df};
+}
+
+std::tuple<Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd>
+mutual_information_zinb_crossfit(
+    const Eigen::Ref<const Eigen::MatrixXi>& samples,
+    const Eigen::Ref<const Eigen::VectorXd>& means,
+    const Eigen::Ref<const Eigen::VectorXd>& concs,
+    const Eigen::Ref<const Eigen::VectorXd>& alphas,
+    int min_pop = 25,
+    std::uint64_t seed = 0,
+    double min_expected = 5.0
+) {
+    init_parallel();
+
+    const int N = samples.rows();
+    const int F = samples.cols();
+
+    Eigen::VectorXi idxA, idxB;
+    make_twofold_split_indices(N, seed, idxA, idxB);
+
+    Eigen::MatrixXd mi   = Eigen::MatrixXd::Zero(F, F);
+    Eigen::MatrixXd chi2 = Eigen::MatrixXd::Zero(F, F);
+    Eigen::MatrixXd df   = Eigen::MatrixXd::Zero(F, F);
+
+    #pragma omp parallel for schedule(dynamic,1)
+    for (int i = 0; i < F; i++) {
+        for (int j = i + 1; j < F; j++) {
+            PointView pv(samples.col(i), samples.col(j));
+
+            MutualInformation<int> mi_full(pv, min_pop, /*zi=*/true);
+
+            const double mean1 = means(i);
+            const double conc1 = concs(i);
+            const double alpha1 = alphas(i);
+
+            const double mean2 = means(j);
+            const double conc2 = concs(j);
+            const double alpha2 = alphas(j);
+
+            auto cdf_x = [=](int x) -> double {
+                return (x < 0) ? 0.0 : zinb2_cdf_single(x, mean1, conc1, alpha1);
+            };
+            auto cdf_y = [=](int y) -> double {
+                return (y < 0) ? 0.0 : zinb2_cdf_single(y, mean2, conc2, alpha2);
+            };
+
+            mi_full.setCDF(cdf_x, cdf_y);
+
+            const auto [mi_ij, _chi2_internal] = mi_full.mutual_information();
+
+            const auto [chi2_cv, df_cv] = crossfit_chi2_twofold(
+                samples.col(i),
+                samples.col(j),
+                mi_full.copula,
+                min_pop,
+                idxA,
+                idxB,
+                min_expected
+            );
+
+            mi(i, j)   = mi_ij;
+            chi2(i, j) = chi2_cv;
+            df(i, j)   = static_cast<double>(df_cv);
+        }
+    }
+
+    mi.triangularView<Eigen::Lower>().setZero();
+    chi2.triangularView<Eigen::Lower>().setZero();
+    df.triangularView<Eigen::Lower>().setZero();
+
+    return {mi, chi2, df};
 }

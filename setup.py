@@ -4,7 +4,7 @@ from skbuild import setup
 from setuptools import find_packages
 
 setup(
-    name="fast_mutual_information",
+    name="mimiq",
     version="0.1.1",
     description="Fast pairwise mutual information computation.",
     author="Daniel O'Hanlon, Sergio Garcia-Busto",

@@ -179,7 +179,7 @@ Eigen::VectorXd as_vector_xd(const DoubleVectorArray& a, const char* name) {
 
 }  // namespace
 
-PYBIND11_MODULE(fast_mutual_information, m) {
+PYBIND11_MODULE(mimiq, m) {
     m.doc() = "Python bindings for fast mutual information computation.";
 
     m.def(

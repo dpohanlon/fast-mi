@@ -1,4 +1,4 @@
-from .fast_mutual_information import (
+from .mimiq import (
     mi_ml,
     mi_binarised,
     mi_normal,

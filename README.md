@@ -4,7 +4,7 @@
       Fast pairwise mutual information for Python and C++
 </p>
 
-![Tests!](https://github.com/dpohanlon/fast_mi_test/actions/workflows/build.yml/badge.svg)
+![Tests!](https://github.com/dpohanlon/mimiq/actions/workflows/build.yml/badge.svg)
 
 
 Intro
@@ -26,7 +26,7 @@ In Python, pairwise mutual information calculations are provided for both normal
 These functions have to be passed the parameters of the corresponding marginal distributions. For example, for the normal distribution:
 
 ```python
-from fast_mutual_information import mi_normal
+from mimiq import mi_normal
 
 # mean and standard-deviation for the two distributions
 mean1, std_dev1 = 0.0, 1.0
@@ -40,7 +40,7 @@ and for the negative binomial distribution (in the `nb2` parameterisation):
 
 ```python
 
-from fast_mutual_information import mi_negative_binomial
+from mimiq import mi_negative_binomial
 
 # means and concentrations for negative binomial marginals
 mean1, conc1 = 10, 10
@@ -74,13 +74,13 @@ Installation
 For Python, install from PyPi using pip:
 
 ```bash
-pip install fast_mutual_information
+pip install mimiq
 ```
 
-or, using the [latest wheel](https://github.com/dpohanlon/fast_mi/releases) for your platform from GitHub:
+or, using the [latest wheel](https://github.com/dpohanlon/mimiq/releases) for your platform from GitHub:
 
 ```bash
-pip install fast_mutual_information-0.1.0-cp310-cp310-macosx_11_0_arm64.whl
+pip install mimiq-0.1.0-cp310-cp310-macosx_11_0_arm64.whl
 ```
 
 or, to install from source, see below.
@@ -115,14 +115,14 @@ sudo apt-get install libeigen3-dev
 
 ```
 
-This package also requires the [fast_negative_binomial](https://github.com/dpohanlon/fast_mi) package, which by default is included as a submodule.
+This package also requires the [fast_negative_binomial](https://github.com/dpohanlon/fast-nb package, which by default is included as a submodule.
 
 To checkout the repository, as well as the PyBind11 and FastNB submodule:
 
 ``` bash
 
-git clone --recurse-submodules git@github.com:dpohanlon/fast-mi.git
-cd fast_mi
+git clone --recurse-submodules git@github.com:dpohanlon/mimiq.git
+cd mimiq
 ```
 
 C++
@@ -158,7 +158,7 @@ Contributing
 If you've made modifications, reformat with `clang-format`:
 
 ```bash
-clang-format -i -style=file fast_mutual_information/*pp
+clang-format -i -style=file mimiq/*pp
 ```
 
 Optimisations

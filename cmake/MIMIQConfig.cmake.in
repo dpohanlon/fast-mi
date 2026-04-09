@@ -9,4 +9,4 @@ if("@ENABLE_BOOST@" STREQUAL "ON")
   find_dependency(Boost 1.70.0 REQUIRED COMPONENTS system)
 endif()
 
-include("${CMAKE_CURRENT_LIST_DIR}/FastMITargets.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/MIMIQTargets.cmake")

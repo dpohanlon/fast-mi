@@ -6,7 +6,7 @@ import numpy as np
 from scipy import sparse
 from scipy.stats import norm, nbinom
 
-from fast_mutual_information import (
+from mimiq import (
     mi_ml,
     mi_binarised,
     mi_normal,

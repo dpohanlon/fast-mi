@@ -5,7 +5,7 @@ from setuptools import find_packages
 
 setup(
     name="mimiq",
-    version="0.1.1",
+    version="0.2.0",
     description="Fast pairwise mutual information computation.",
     author="Daniel O'Hanlon, Sergio Garcia-Busto",
     author_email="dpohanlon@gmail.com",
